@@ -348,6 +348,121 @@ class TrendTests(unittest.TestCase):
         self.assertNotEqual(signal["regime"]["reason"], "sustained_downtrend")
 
 
+def _crash_rows(crash_highs: list[tuple[int | None, int]] | None = None) -> list[dict]:
+    """A stable two-sided 6h regime followed by a fast one-sided collapse: lows break down
+    while avgHighPrice goes null with zero high-side volume (nobody instant-buying) — the
+    Dragon arrow(p+) 11228 crash shape of 2026-06-30→07-02. ``crash_highs`` optionally sets
+    (avgHighPrice, highPriceVolume) per crash bucket to model sparse high-side prints."""
+    crash_lows = [3250, 3016, 2714, 2200, 1788, 2000, 1788, 2100]
+    crash_highs = crash_highs or [(None, 0)] * len(crash_lows)
+    step = 21600
+    n_stable = 160
+    start = int(time.time()) - (n_stable + len(crash_lows)) * step
+    rows = [
+        {
+            "timestamp": start + i * step,
+            "avgLowPrice": 3300,
+            "avgHighPrice": 3500,
+            "lowPriceVolume": 500,
+            "highPriceVolume": 500,
+        }
+        for i in range(n_stable)
+    ]
+    for j, low in enumerate(crash_lows):
+        high, high_vol = crash_highs[j]
+        rows.append({
+            "timestamp": start + (n_stable + j) * step,
+            "avgLowPrice": low,
+            "avgHighPrice": high,
+            "lowPriceVolume": 800,
+            "highPriceVolume": high_vol,
+        })
+    return rows
+
+
+class CrashGuardTests(unittest.TestCase):
+    """The 11228 incident (2026-06-30→07-02): a 45% two-day one-sided crash slipped past all
+    three deterministic guards, and the planner recommended a 3,598 sell from a dead regime."""
+
+    def test_regime_flags_short_window_shock_the_slow_drift_split_misses(self) -> None:
+        rows = _crash_rows()
+        lows = [r["avgLowPrice"] for r in rows if r.get("avgLowPrice")]
+        highs = [r["avgHighPrice"] for r in rows if r.get("avgHighPrice")]
+        regime = signals._regime_risk(rows, lows, highs, 1900, timestep="6h")
+        # The quarter-split drift stays tiny (the crash is 8 of ~42 "recent" buckets)...
+        self.assertGreater(regime["drift_pct"], -0.08)
+        # ...but the 2-days-vs-prior-week shock check must trip on its own.
+        self.assertEqual(regime["level"], "high")
+        self.assertEqual(regime["reason"], "short_window_price_shock")
+        self.assertLessEqual(regime["shock_pct"], -0.15)
+
+    def test_regime_shock_stays_quiet_in_a_stable_market(self) -> None:
+        rows = _trend_rows(3300, 3300, n=168)
+        lows = [r["avgLowPrice"] for r in rows]
+        highs = [r["avgHighPrice"] for r in rows]
+        regime = signals._regime_risk(rows, lows, highs, 3300, timestep="6h")
+        self.assertEqual(regime["level"], "low")
+        self.assertAlmostEqual(regime["shock_pct"], 0.0, places=2)
+
+    def test_trend_sees_one_sided_crash_buckets(self) -> None:
+        # Crash buckets have null avgHighPrice; a both-sides-only mid series drops exactly
+        # those points and reads the collapse as flat. The low-side fallback plus the
+        # short-window override must read it as a severe downtrend.
+        trend = signals._trend(_crash_rows(), "6h")
+        self.assertEqual(trend["direction"], "down")
+        self.assertLessEqual(trend["pct"], -0.18)
+
+    def test_capped_sell_refuses_a_target_with_no_fresh_high_side_prints(self) -> None:
+        rows = _crash_rows()
+        trend = signals._trend(rows, "6h")
+        # Stale pre-crash 3,500 highs are still inside the 3-day cap window, but nothing has
+        # traded on the high side in ~36h: there is no evidenced exit, so the target is 0.
+        self.assertEqual(signals._capped_sell(rows, "6h", 3500, trend), 0)
+
+    def test_capped_sell_caps_to_the_freshest_traded_high(self) -> None:
+        highs = [(None, 0)] * 6 + [(2044, 2), (2575, 1992)]
+        rows = _crash_rows(crash_highs=highs)
+        trend = signals._trend(rows, "6h")
+        self.assertEqual(signals._capped_sell(rows, "6h", 3500, trend), 2575)
+
+    def test_item_signal_drops_the_crash_item_without_an_evidenced_exit(self) -> None:
+        now = int(time.time())
+        with (
+            patch("merch.prices.mapping_by_id",
+                  return_value={1: {"id": 1, "name": "Crasher", "limit": 11000}}),
+            patch("merch.prices.timeseries", return_value=_crash_rows()),
+            patch("merch.prices.latest", return_value={
+                "1": {"low": 1900, "high": 2000, "lowTime": now, "highTime": now}
+            }),
+            patch("merch.prices.one_hour", return_value={
+                "1": {"lowPriceVolume": 800, "highPriceVolume": 0}
+            }),
+        ):
+            self.assertIsNone(signals.item_signal(1, timestep="6h"))
+
+    def test_item_signal_grades_the_crash_high_risk_with_a_realistic_exit(self) -> None:
+        now = int(time.time())
+        highs = [(None, 0)] * 6 + [(2044, 2), (2575, 1992)]
+        with (
+            patch("merch.prices.mapping_by_id",
+                  return_value={1: {"id": 1, "name": "Crasher", "limit": 11000}}),
+            patch("merch.prices.timeseries", return_value=_crash_rows(crash_highs=highs)),
+            patch("merch.prices.latest", return_value={
+                "1": {"low": 1900, "high": 2000, "lowTime": now, "highTime": now}
+            }),
+            patch("merch.prices.one_hour", return_value={
+                "1": {"lowPriceVolume": 800, "highPriceVolume": 400}
+            }),
+        ):
+            signal = signals.item_signal(1, timestep="6h")
+
+        assert signal is not None
+        self.assertEqual(signal["regime"]["level"], "high")
+        self.assertEqual(signal["regime"]["reason"], "short_window_price_shock")
+        self.assertEqual(signal["sell"], 2575)
+        self.assertLess(signal["sell"], signal["sell_band_full"])
+
+
 class BacktestTimeStopTests(unittest.TestCase):
     def test_time_stop_books_forced_exits_that_hold_forever_hides(self) -> None:
         # A steady downtrend: a buy near the end never recovers to its sell band.

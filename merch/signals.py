@@ -165,7 +165,7 @@ def _fillable_qty(ge_limit: int, volume_1h: dict, fill_window_hours: float,
 
 
 def _regime_risk(rows: list[dict], lows: list[int], highs: list[int],
-                 current_low: int | None) -> dict:
+                 current_low: int | None, timestep: str = REGIME_TIMESTEP) -> dict:
     """Small drift/shock check so old percentile bands do not hide a breaking market."""
     if len(rows) < 40 or not lows or not highs:
         return {"level": "unknown", "reason": "insufficient_history"}
@@ -191,7 +191,22 @@ def _regime_risk(rows: list[dict], lows: list[int], highs: list[int],
     recent_vol_median = median(recent_vols) if recent_vols else 0
     volume_ratio = round(recent_vol_median / prior_vol_median, 2) if prior_vol_median else None
 
-    if drift_pct <= -0.08 and (latest_rank is None or latest_rank <= 0.08):
+    # The drift comparison above splits at the last quarter of ~3 months (~23 days), so a fast
+    # two-day crash barely moves the "recent" median (the Dragon arrow(p+) 45% break registered
+    # -1.1%). Compare the last ~2 days of low prints to the week before them so a fast break
+    # trips the gate independently of the slow-drift split.
+    shock_rows = _recent_window(rows, timestep, days=2)
+    shock_lows = [r["avgLowPrice"] for r in shock_rows if r.get("avgLowPrice")]
+    week_rows = _recent_window(rows[:len(rows) - len(shock_rows)], timestep, days=7)
+    week_lows = [r["avgLowPrice"] for r in week_rows if r.get("avgLowPrice")]
+    shock_pct = None
+    if len(shock_lows) >= 3 and len(week_lows) >= 5 and median(week_lows):
+        shock_pct = round((median(shock_lows) - median(week_lows)) / median(week_lows), 4)
+
+    if shock_pct is not None and shock_pct <= -0.15:
+        level = "high"
+        reason = "short_window_price_shock"
+    elif drift_pct <= -0.08 and (latest_rank is None or latest_rank <= 0.08):
         level = "high"
         reason = "recent_price_breakdown"
     elif volume_ratio is not None and volume_ratio >= 3 and abs(drift_pct) >= 0.05:
@@ -210,6 +225,7 @@ def _regime_risk(rows: list[dict], lows: list[int], highs: list[int],
         "recent_low_median": round(recent_median),
         "prior_low_median": round(prior_median),
         "drift_pct": drift_pct,
+        "shock_pct": shock_pct,
         "volume_ratio": volume_ratio,
     }
 
@@ -233,11 +249,18 @@ def _trend(rows: list[dict], timestep: str, days: float = 30) -> dict:
     now bleeding) can read as positive whole-history drift while the last month is sharply down.
     This catches that slow bleed so old percentile bands don't price an unreachable exit."""
     window = _recent_window(rows, timestep, days)
-    mids = [
-        (r["avgHighPrice"] + r["avgLowPrice"]) / 2
-        for r in window
-        if r.get("avgHighPrice") and r.get("avgLowPrice")
-    ]
+    # Crash buckets are often one-sided (avgHighPrice null — nobody instant-buying), so
+    # requiring both sides silently drops exactly the points that show the break: 6 of 8
+    # Dragon arrow(p+) crash buckets vanished and a ~45% collapse measured -9.8%. Fall back
+    # to whichever side printed rather than discarding the bucket.
+    mids = []
+    for r in window:
+        high = r.get("avgHighPrice")
+        low = r.get("avgLowPrice")
+        if high and low:
+            mids.append((high + low) / 2)
+        elif high or low:
+            mids.append(high or low)
     if len(mids) < 8:
         return {"direction": "unknown", "pct": None, "window_points": len(mids)}
     # Compare the start and end of the window via edge medians (first/last fifth). Median of a
@@ -246,6 +269,13 @@ def _trend(rows: list[dict], timestep: str, days: float = 30) -> dict:
     edge = max(3, len(mids) // 5)
     older = median(mids[:edge])
     recent = median(mids[-edge:])
+    # A fast break lives in the last handful of buckets, and the edge median dilutes it
+    # (the Dragon arrow(p+) crash was ~9 of the last 24 points and read -2.7%). Take the
+    # lower of the edge median and the last ~2 days' median, so a shock can only steepen
+    # the reading — never soften it.
+    shock_pts = max(3, round(2 * 1440 / _STEP_MINUTES[timestep]))
+    if len(mids) > shock_pts:
+        recent = min(recent, median(mids[-shock_pts:]))
     pct = round((recent - older) / older, 4) if older else 0.0
     direction = "down" if pct <= -0.08 else "up" if pct >= 0.08 else "flat"
     return {"direction": direction, "pct": pct, "window_points": len(mids)}
@@ -270,6 +300,10 @@ def _capped_sell(rows: list[dict], timestep: str, sell_band_full: int, trend: di
     """In a sustained downtrend the full-window sell band is propped up by stale pre-decline
     highs, pricing an exit the item has already left behind. Cap it to the 90th percentile of
     the last 3 days so an intraday target reflects the market the item is actually in now.
+    A fast crash defeats the 3-day window too (pre-crash Dragon arrow(p+) 3,711 prints kept
+    the cap at 3,598 while live trade was near 2,100), so the cap must also be validated by a
+    high-side print that actually traded volume in the last ~36h; without one the item has no
+    evidenced exit and the sell target collapses to 0 (callers drop the non-positive margin).
     Shared by live signals and the backtest so both grade the same strategy."""
     if trend["direction"] != "down":
         return sell_band_full
@@ -279,7 +313,15 @@ def _capped_sell(rows: list[dict], timestep: str, sell_band_full: int, trend: di
         if r.get("avgHighPrice")
     ]
     recent_cap = percentile(recent_highs, 0.90) if recent_highs else 0
-    return recent_cap if recent_cap and recent_cap < sell_band_full else sell_band_full
+    fresh_cap = max(
+        (r["avgHighPrice"] for r in _recent_window(rows, timestep, days=1.5)
+         if r.get("avgHighPrice") and (r.get("highPriceVolume") or 0) > 0),
+        default=0,
+    )
+    if not fresh_cap:
+        return 0
+    cap = min(recent_cap, fresh_cap) if recent_cap else fresh_cap
+    return cap if cap < sell_band_full else sell_band_full
 
 
 # Moderate percentile bands provide recurring intraday opportunities. Selection remains the
@@ -365,7 +407,8 @@ def item_signal(
         if current_high and target_sell else None
     )
     ready_to_sell = bool(price_fresh and current_high and current_high >= target_sell)
-    regime = _regime_risk(regime_rows, regime_lows, regime_highs, current_low)
+    regime = _regime_risk(regime_rows, regime_lows, regime_highs, current_low,
+                          timestep=REGIME_TIMESTEP)
 
     regime = _with_downtrend_risk(regime, trend)
 
@@ -686,7 +729,8 @@ def time_of_day_signal(item_id: int) -> dict | None:
     highs = [row["avgHighPrice"] for row in rows if row.get("avgHighPrice")]
     lows = [row["avgLowPrice"] for row in rows if row.get("avgLowPrice")]
     trend = _trend(rows, TIME_OF_DAY_TIMESTEP)
-    regime = _with_downtrend_risk(_regime_risk(rows, lows, highs, buy), trend)
+    regime = _with_downtrend_risk(
+        _regime_risk(rows, lows, highs, buy, timestep=TIME_OF_DAY_TIMESTEP), trend)
     if regime["level"] == "high":
         return None
 
