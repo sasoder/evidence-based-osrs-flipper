@@ -14,7 +14,8 @@ Inspired by Leverage In Action's
 
 ## What you can do with it
 
-You use it through an agent (Claude Code with the `/flip` skill). Typical requests:
+You use it through any coding agent that supports Agent Skills (the `flip` skill lives in
+`.agents/skills/`, `.claude/skills/` holds a thin pointer to it). Typical requests:
 
 - **"50m liquid, what should I do?"** It syncs your RuneLite exports, triages every open offer
   (hold, cancel, collect, or reprice), then fills your free slots with new calls and presents one
