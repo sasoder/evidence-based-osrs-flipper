@@ -47,6 +47,7 @@ ACTIVE_HORIZON_MINUTES = 90
 ACTIVE_CANCEL_MINUTES = 30
 PLAN_HORIZONS = {"intraday", "overnight"}
 OVERNIGHT_FILL_WINDOW_HOURS = signals.MAX_HOLD_HOURS
+OVERNIGHT_AWAY_HOURS = 8      # away this long or more is the overnight horizon, not a short absence
 PERSONAL_CANDIDATE_LIMIT = 25
 DEFAULT_LANES = frozenset({"patient", "probe", "time", "active"})
 LANE_ALIASES = {
@@ -702,7 +703,7 @@ def plan(cash: int, offers: list[dict] | None = None,
          active_seed_limit: int | None = None, active_candidate_limit: int = 20,
          time_seed_limit: int = 80, time_candidate_limit: int = 10,
          horizon: str = "intraday", lanes: str | list[str] | set[str] | tuple[str, ...] | None = None,
-         max_new_slots: int | None = None) -> dict:
+         max_new_slots: int | None = None, away_hours: float | None = None) -> dict:
     if horizon not in PLAN_HORIZONS:
         raise ValueError(f"unknown plan horizon {horizon!r}; expected one of {sorted(PLAN_HORIZONS)}")
     if cash is None:
@@ -711,7 +712,23 @@ def plan(cash: int, offers: list[dict] | None = None,
         raise ValueError("cash must be non-negative")
     if max_new_slots is not None and not 0 <= max_new_slots <= MAX_SLOTS:
         raise ValueError(f"max_new_slots must be between 0 and {MAX_SLOTS}")
+    if away_hours is not None and away_hours < 0:
+        raise ValueError("away_hours must be non-negative")
+    # Attendance is one concept: overnight is just "away long enough". Either input implies the
+    # other so no lane can see a horizon that contradicts the stated absence.
+    if horizon == "overnight":
+        away_hours = max(away_hours or 0, OVERNIGHT_FILL_WINDOW_HOURS)
+    if away_hours is not None and away_hours >= OVERNIGHT_AWAY_HOURS:
+        horizon = "overnight"
     enabled_lanes = _normalize_lanes(lanes)
+    # A lane is unattendable when its first required management action lands inside the absence.
+    active_unattended = away_hours is not None and away_hours * 60 >= ACTIVE_CANCEL_MINUTES
+    if active_unattended and enabled_lanes and enabled_lanes <= {"active"}:
+        raise ValueError(
+            f"contradiction: only the active lane is requested but you are away "
+            f"{away_hours:g}h; active offers need management within {ACTIVE_CANCEL_MINUTES}m — "
+            "reduce the absence or allow other lanes"
+        )
     offers = offers or []
     overlay = overlay or {}
     boost = {b["id"] for b in overlay.get("boost", [])}
@@ -737,6 +754,7 @@ def plan(cash: int, offers: list[dict] | None = None,
                    "open_offers": len(offers),
                    "profit_floor_gp": profit_floor,
                    "horizon": horizon,
+                   "away_hours": away_hours,
                    "lanes": sorted(enabled_lanes),
                    "max_new_slots": max_new_slots},
         "offer_triage": offer_triage,
@@ -858,10 +876,13 @@ def plan(cash: int, offers: list[dict] | None = None,
     # gp/hour, rather than only inheriting whatever slots they leave behind.
     if "active" not in enabled_lanes:
         active_scan = {"candidates": [], "rejected": []}
-    elif horizon == "overnight":
+    elif active_unattended:
         active_scan = {
             "candidates": [],
-            "rejected": [{"reason": "active lane disabled for overnight horizon"}],
+            "rejected": [{"reason": (
+                f"active lane disabled: away {away_hours:g}h, but active offers need "
+                f"management within {ACTIVE_CANCEL_MINUTES}m"
+            )}],
         }
     else:
         active_scan = signals.active_margin_scan(
@@ -1118,7 +1139,12 @@ def _main(argv: list[str]) -> int:
     ap.add_argument("--time-seed-limit", type=int, default=80)
     ap.add_argument("--time-limit", type=int, default=10)
     ap.add_argument("--horizon", choices=sorted(PLAN_HORIZONS), default="intraday",
-                    help="intraday includes active-margin probes; overnight excludes short-horizon active calls")
+                    help=("overnight means away 12h+: sizes patient to the 12h window and, like "
+                          "any sufficient --away-hours, excludes keyboard-dependent lanes"))
+    ap.add_argument("--away-hours", type=float, default=None,
+                    help=("hours the user will be away from the keyboard; disables lanes whose "
+                          f"offers need management sooner (active: {ACTIVE_CANCEL_MINUTES}m); "
+                          f"{OVERNIGHT_AWAY_HOURS}h+ implies --horizon overnight"))
     ap.add_argument(
         "--lanes",
         default=None,
@@ -1142,15 +1168,20 @@ def _main(argv: list[str]) -> int:
     else:
         offers = json.loads(args.offers)
     overlay = json.loads(open(args.overlay).read()) if args.overlay else {}
-    p = plan(cash=args.cash, offers=offers, overlay=overlay,
-             seed_limit=args.seed_limit, candidate_limit=(args.limit or None),
-             active_seed_limit=args.active_seed_limit,
-             active_candidate_limit=args.active_limit,
-             time_seed_limit=args.time_seed_limit,
-             time_candidate_limit=args.time_limit,
-             horizon=args.horizon,
-             lanes=args.lanes,
-             max_new_slots=args.max_new_slots)
+    try:
+        p = plan(cash=args.cash, offers=offers, overlay=overlay,
+                 seed_limit=args.seed_limit, candidate_limit=(args.limit or None),
+                 active_seed_limit=args.active_seed_limit,
+                 active_candidate_limit=args.active_limit,
+                 time_seed_limit=args.time_seed_limit,
+                 time_candidate_limit=args.time_limit,
+                 horizon=args.horizon,
+                 lanes=args.lanes,
+                 max_new_slots=args.max_new_slots,
+                 away_hours=args.away_hours)
+    except ValueError as e:
+        print(f"error: {e}", file=sys.stderr)
+        return 1
     if args.write_intents and not p.get("error"):
         from . import intents
 
