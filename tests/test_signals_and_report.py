@@ -1283,6 +1283,16 @@ def _sig(iid, score, *, regime="low", buy=100, sell=200, fillable=50, ge_limit=1
             "distance_to_buy_pct": 0.0}
 
 
+def _active_scan():
+    return {"candidates": [{
+        "id": 7, "name": "Test gear", "buy": 150_000, "sell": 165_000,
+        "net_margin": 11_700, "roi_pct": 7.8, "max_qty": 8,
+        "fillable_qty": 8, "expected_value_per_unit": 10_000,
+        "high_age_minutes": 1.0, "low_age_minutes": 2.0,
+        "high_vol_1h": 5, "low_vol_1h": 5, "short_drift_pct": 0.0,
+    }], "rejected": []}
+
+
 def _bt(ok=True):
     return {
         "total_profit_per_unit": 500,
@@ -1475,13 +1485,7 @@ class PlanTests(unittest.TestCase):
         self.assertEqual(p["buys"][0]["qty"], 50)
 
     def test_active_lane_sizes_to_ge_limit_and_available_gp(self) -> None:
-        active = {"candidates": [{
-            "id": 7, "name": "Test gear", "buy": 150_000, "sell": 165_000,
-            "net_margin": 11_700, "roi_pct": 7.8, "max_qty": 8,
-            "fillable_qty": 8, "expected_value_per_unit": 10_000,
-            "high_age_minutes": 1.0, "low_age_minutes": 2.0,
-            "high_vol_1h": 5, "low_vol_1h": 5, "short_drift_pct": 0.0,
-        }], "rejected": []}
+        active = _active_scan()
         p = self._plan([], active=active)
 
         self.assertEqual(p["buys"], [])
@@ -1491,13 +1495,7 @@ class PlanTests(unittest.TestCase):
         self.assertEqual(p["slots"]["active_buys"], 1)
 
     def test_lanes_can_select_patient_only(self) -> None:
-        active = {"candidates": [{
-            "id": 7, "name": "Test gear", "buy": 150_000, "sell": 165_000,
-            "net_margin": 11_700, "roi_pct": 7.8, "max_qty": 8,
-            "fillable_qty": 8, "expected_value_per_unit": 10_000,
-            "high_age_minutes": 1.0, "low_age_minutes": 2.0,
-            "high_vol_1h": 5, "low_vol_1h": 5, "short_drift_pct": 0.0,
-        }], "rejected": []}
+        active = _active_scan()
         time_scan = {"candidates": [{
             "id": 8, "name": "Timed item", "buy": 100, "sell": 120,
             "ge_limit": 5_000, "fillable_qty": 5_000,
@@ -1519,13 +1517,7 @@ class PlanTests(unittest.TestCase):
         self.assertEqual(p["inputs"]["lanes"], ["patient"])
 
     def test_lanes_can_select_active_only(self) -> None:
-        active = {"candidates": [{
-            "id": 7, "name": "Test gear", "buy": 150_000, "sell": 165_000,
-            "net_margin": 11_700, "roi_pct": 7.8, "max_qty": 8,
-            "fillable_qty": 8, "expected_value_per_unit": 10_000,
-            "high_age_minutes": 1.0, "low_age_minutes": 2.0,
-            "high_vol_1h": 5, "low_vol_1h": 5, "short_drift_pct": 0.0,
-        }], "rejected": []}
+        active = _active_scan()
 
         personal = {
             99: {
@@ -1567,19 +1559,52 @@ class PlanTests(unittest.TestCase):
         self.assertEqual(p["skipped"][0]["reason"], "patient-probe lane disabled")
 
     def test_overnight_horizon_excludes_active_lane_before_intents(self) -> None:
-        active = {"candidates": [{
-            "id": 7, "name": "Test gear", "buy": 150_000, "sell": 165_000,
-            "net_margin": 11_700, "roi_pct": 7.8, "max_qty": 8,
-            "fillable_qty": 8, "expected_value_per_unit": 10_000,
-            "high_age_minutes": 1.0, "low_age_minutes": 2.0,
-            "high_vol_1h": 5, "low_vol_1h": 5, "short_drift_pct": 0.0,
-        }], "rejected": []}
+        active = _active_scan()
         p = self._plan([], active=active, horizon="overnight")
 
         self.assertEqual(p["inputs"]["horizon"], "overnight")
         self.assertEqual(p["active_buys"], [])
         self.assertEqual(intents.intents_from_plan(p), [])
-        self.assertIn("active lane disabled for overnight horizon", p["active_filter_summary"])
+        self.assertTrue(any("active lane disabled" in reason
+                            for reason in p["active_filter_summary"]))
+
+    def test_away_hours_excludes_active_lane_before_intents(self) -> None:
+        active = _active_scan()
+        p = self._plan([], active=active, away_hours=3)
+
+        self.assertEqual(p["inputs"]["horizon"], "intraday")
+        self.assertEqual(p["inputs"]["away_hours"], 3)
+        self.assertEqual(p["active_buys"], [])
+        self.assertEqual(intents.intents_from_plan(p), [])
+        self.assertTrue(any("active lane disabled" in reason
+                            for reason in p["active_filter_summary"]))
+
+    def test_brief_absence_keeps_active_lane(self) -> None:
+        active = _active_scan()
+        p = self._plan([], active=active, away_hours=0.25)
+
+        self.assertEqual(len(p["active_buys"]), 1)
+
+    def test_long_absence_implies_overnight_horizon(self) -> None:
+        p = self._plan([], away_hours=plan.OVERNIGHT_AWAY_HOURS)
+
+        self.assertEqual(p["inputs"]["horizon"], "overnight")
+
+    def test_overnight_horizon_implies_absence(self) -> None:
+        p = self._plan([], horizon="overnight")
+
+        self.assertEqual(p["inputs"]["away_hours"], plan.OVERNIGHT_FILL_WINDOW_HOURS)
+
+    def test_overnight_horizon_keeps_active_excluded_despite_short_away_hours(self) -> None:
+        p = self._plan([], active=_active_scan(), horizon="overnight", away_hours=0.25)
+
+        self.assertEqual(p["active_buys"], [])
+        self.assertEqual(p["inputs"]["away_hours"], plan.OVERNIGHT_FILL_WINDOW_HOURS)
+
+    def test_active_only_while_away_is_a_contradiction(self) -> None:
+        with self.assertRaises(ValueError) as ctx:
+            self._plan([], lanes="active", away_hours=3)
+        self.assertIn("contradiction", str(ctx.exception))
 
     def test_overnight_horizon_sizes_patient_scan_to_twelve_hour_window(self) -> None:
         captured = {}
