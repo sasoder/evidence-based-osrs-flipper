@@ -1,0 +1,31 @@
+# python
+__pycache__/
+*.pyc
+.venv/
+.uv/
+.pytest_cache/
+
+# network response cache (TTL'd, regenerated on demand)
+data/cache/
+
+# RuneLite runtime snapshots are local inputs, never committed
+data/incoming/bank-memory/
+data/incoming/flipping/
+data/incoming/ge-slots/
+
+# local config/secrets/overrides
+config/settings.json
+config/settings.local.json
+
+# runtime state lives on this machine, not in the repo
+state/
+reports/*.md
+journal/
+overlay.json
+
+# engine-local files
+.claude/settings.local.json
+.claude/worktrees/
+
+# os
+.DS_Store
