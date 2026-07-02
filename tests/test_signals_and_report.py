@@ -14,6 +14,10 @@ import urllib.error
 
 from merch import intents, plan, prices, research, runelite, signals
 
+# Fixture exports are always written and read under this name; tests must not
+# depend on the machine-local config/settings.json rsn.
+_TEST_RSN = "Tester"
+
 
 class TimeseriesMemoTests(unittest.TestCase):
     def setUp(self) -> None:
@@ -593,11 +597,14 @@ class FlipParsingTests(unittest.TestCase):
     def _read(self, tmp_path, records: list[dict]) -> list[dict]:
         flip_dir = tmp_path / "flipping"
         flip_dir.mkdir()
-        (flip_dir / f"{runelite.CONFIG.get('rsn')}.json").write_text(json.dumps({
+        (flip_dir / f"{_TEST_RSN}.json").write_text(json.dumps({
             "trades": records,
             "lastOffers": {},
         }))
-        with patch.object(runelite, "INCOMING", tmp_path):
+        with (
+            patch.object(runelite, "INCOMING", tmp_path),
+            patch.dict(runelite.CONFIG, {"rsn": _TEST_RSN}),
+        ):
             return runelite.read_flips()
 
     def test_single_profile_export_can_supply_rsn(self) -> None:
@@ -700,8 +707,8 @@ class FlipParsingTests(unittest.TestCase):
             tmp = Path(d)
             slot_dir = tmp / "ge-slots"
             slot_dir.mkdir()
-            (slot_dir / f"{runelite.CONFIG.get('rsn')}.json").write_text(json.dumps({
-                "rsn": runelite.CONFIG.get("rsn"),
+            (slot_dir / f"{_TEST_RSN}.json").write_text(json.dumps({
+                "rsn": _TEST_RSN,
                 "exportedAt": "2026-06-23T16:30:00Z",
                 "slots": [
                     {
@@ -755,7 +762,7 @@ class FlipParsingTests(unittest.TestCase):
 
             with (
                 patch.object(runelite, "INCOMING", tmp),
-                patch.dict(runelite.CONFIG, {"offer_snapshot_stale_minutes": 999999}),
+                patch.dict(runelite.CONFIG, {"rsn": _TEST_RSN, "offer_snapshot_stale_minutes": 999999}),
             ):
                 offers = runelite.read_open_offers()
 
@@ -799,8 +806,8 @@ class FlipParsingTests(unittest.TestCase):
             tmp = Path(d)
             slot_dir = tmp / "ge-slots"
             slot_dir.mkdir()
-            (slot_dir / f"{runelite.CONFIG.get('rsn')}.json").write_text(json.dumps({
-                "rsn": runelite.CONFIG.get("rsn"),
+            (slot_dir / f"{_TEST_RSN}.json").write_text(json.dumps({
+                "rsn": _TEST_RSN,
                 "exportedAt": "2026-06-23T16:30:00Z",
                 "slots": [{
                     "slot": 4,
@@ -819,7 +826,7 @@ class FlipParsingTests(unittest.TestCase):
 
             with (
                 patch.object(runelite, "INCOMING", tmp),
-                patch.dict(runelite.CONFIG, {"offer_snapshot_stale_minutes": 999999}),
+                patch.dict(runelite.CONFIG, {"rsn": _TEST_RSN, "offer_snapshot_stale_minutes": 999999}),
             ):
                 offers = runelite.read_open_offers()
 
@@ -835,8 +842,8 @@ class FlipParsingTests(unittest.TestCase):
             slot_dir.mkdir()
             flip_dir = tmp / "flipping"
             flip_dir.mkdir()
-            (slot_dir / f"{runelite.CONFIG['rsn']}.json").write_text(json.dumps({
-                "rsn": runelite.CONFIG["rsn"],
+            (slot_dir / f"{_TEST_RSN}.json").write_text(json.dumps({
+                "rsn": _TEST_RSN,
                 "exportedAt": "2026-06-23T16:30:00Z",
                 "slots": [{
                     "slot": 2,
@@ -854,7 +861,7 @@ class FlipParsingTests(unittest.TestCase):
             # rewritten `t`. The bogus live `t` (=export time) must be ignored.
             history_ms = int(_epoch("2026-06-23T16:00:00Z") * 1000)
             export_ms = int(_epoch("2026-06-23T16:30:00Z") * 1000)
-            (flip_dir / f"{runelite.CONFIG['rsn']}.json").write_text(json.dumps({
+            (flip_dir / f"{_TEST_RSN}.json").write_text(json.dumps({
                 "trades": [{
                     "id": 21902,
                     "name": "item",
@@ -875,7 +882,7 @@ class FlipParsingTests(unittest.TestCase):
             with (
                 patch.object(runelite, "INCOMING", tmp),
                 patch.object(runelite, "_FILL_ANCHOR_PATH", tmp / "offer_fills.json"),
-                patch.dict(runelite.CONFIG, {"offer_snapshot_stale_minutes": 999999}),
+                patch.dict(runelite.CONFIG, {"rsn": _TEST_RSN, "offer_snapshot_stale_minutes": 999999}),
             ):
                 offers = runelite.read_open_offers()
 
@@ -895,8 +902,8 @@ class FlipParsingTests(unittest.TestCase):
             anchor_path = tmp / "offer_fills.json"
 
             def write_export(exported_at: str, filled: int) -> None:
-                (slot_dir / f"{runelite.CONFIG['rsn']}.json").write_text(json.dumps({
-                    "rsn": runelite.CONFIG["rsn"],
+                (slot_dir / f"{_TEST_RSN}.json").write_text(json.dumps({
+                    "rsn": _TEST_RSN,
                     "exportedAt": exported_at,
                     "slots": [{
                         "slot": 0,
@@ -910,7 +917,7 @@ class FlipParsingTests(unittest.TestCase):
                         "ageSeconds": 23400,
                     }],
                 }))
-                (flip_dir / f"{runelite.CONFIG['rsn']}.json").write_text(json.dumps({
+                (flip_dir / f"{_TEST_RSN}.json").write_text(json.dumps({
                     "trades": [],  # no terminal history for this still-open offer
                     "lastOffers": {"0": {"id": 30816, "st": "SELLING", "cQIT": filled,
                                           "uuid": "abc", "t": 0}},
@@ -922,7 +929,7 @@ class FlipParsingTests(unittest.TestCase):
                 patch.object(runelite, "INCOMING", tmp),
                 patch.object(runelite, "_OFFER_AGE_PATH", age_path),
                 patch.object(runelite, "_FILL_ANCHOR_PATH", anchor_path),
-                patch.dict(runelite.CONFIG, {"offer_snapshot_stale_minutes": 999999}),
+                patch.dict(runelite.CONFIG, {"rsn": _TEST_RSN, "offer_snapshot_stale_minutes": 999999}),
             ):
                 first = runelite.read_open_offers()
             self.assertIsNone(first[0]["last_fill_age_hours"])
@@ -933,7 +940,7 @@ class FlipParsingTests(unittest.TestCase):
                 patch.object(runelite, "INCOMING", tmp),
                 patch.object(runelite, "_OFFER_AGE_PATH", age_path),
                 patch.object(runelite, "_FILL_ANCHOR_PATH", anchor_path),
-                patch.dict(runelite.CONFIG, {"offer_snapshot_stale_minutes": 999999}),
+                patch.dict(runelite.CONFIG, {"rsn": _TEST_RSN, "offer_snapshot_stale_minutes": 999999}),
             ):
                 grew = runelite.read_open_offers()
             self.assertEqual(grew[0]["last_fill_at"], "2026-06-23T16:30:00+00:00")
@@ -946,7 +953,7 @@ class FlipParsingTests(unittest.TestCase):
             slot_dir.mkdir()
             flip_dir = tmp / "flipping"
             flip_dir.mkdir()
-            rsn = runelite.CONFIG["rsn"]
+            rsn = _TEST_RSN
             (slot_dir / f"{rsn}.json").write_text(json.dumps({
                 "rsn": rsn,
                 "exportedAt": "2026-06-23T16:30:00Z",
@@ -978,7 +985,7 @@ class FlipParsingTests(unittest.TestCase):
                 patch.object(runelite, "INCOMING", tmp),
                 patch.object(runelite, "_OFFER_AGE_PATH", tmp / "offer_ages.json"),
                 patch.object(runelite, "_FILL_ANCHOR_PATH", tmp / "offer_fills.json"),
-                patch.dict(runelite.CONFIG, {"offer_snapshot_stale_minutes": 999999}),
+                patch.dict(runelite.CONFIG, {"rsn": _TEST_RSN, "offer_snapshot_stale_minutes": 999999}),
             ):
                 offers = runelite.read_open_offers()
 
@@ -990,12 +997,15 @@ class FlipParsingTests(unittest.TestCase):
             tmp = Path(d)
             slot_dir = tmp / "ge-slots"
             slot_dir.mkdir()
-            (slot_dir / f"{runelite.CONFIG['rsn']}.json").write_text(json.dumps({
+            (slot_dir / f"{_TEST_RSN}.json").write_text(json.dumps({
                 "exportedAt": "2020-01-01T00:00:00Z",
                 "slots": [],
             }))
 
-            with patch.object(runelite, "INCOMING", tmp):
+            with (
+                patch.object(runelite, "INCOMING", tmp),
+                patch.dict(runelite.CONFIG, {"rsn": _TEST_RSN}),
+            ):
                 with self.assertRaisesRegex(RuntimeError, "GE slot export is stale"):
                     runelite.read_open_offers()
 
@@ -1052,7 +1062,7 @@ class OfferAgeAnchorTests(unittest.TestCase):
         slot_dir.mkdir()
         flip_dir = tmp / "flipping"
         flip_dir.mkdir()
-        rsn = runelite.CONFIG["rsn"]
+        rsn = _TEST_RSN
         # Plugin has lost the placement time — both fields null, like a relog.
         (slot_dir / f"{rsn}.json").write_text(json.dumps({
             "rsn": rsn,
@@ -1078,7 +1088,7 @@ class OfferAgeAnchorTests(unittest.TestCase):
             patch.object(runelite, "INCOMING", tmp),
             patch.object(runelite, "_OFFER_AGE_PATH", tmp / "offer_ages.json"),
             patch.object(runelite, "_FILL_ANCHOR_PATH", tmp / "offer_fills.json"),
-            patch.dict(runelite.CONFIG, {"offer_snapshot_stale_minutes": 999_999}),
+            patch.dict(runelite.CONFIG, {"rsn": _TEST_RSN, "offer_snapshot_stale_minutes": 999_999}),
         ):
             return runelite.read_open_offers()
 
@@ -1114,7 +1124,7 @@ class OfferAgeAnchorTests(unittest.TestCase):
             self.assertEqual(first[0]["age_hours"], 0.0)  # no evidence yet
             # A later snapshot of the same uuid must show real elapsed time.
             later = "2026-06-25T15:00:00Z"
-            rsn = runelite.CONFIG["rsn"]
+            rsn = _TEST_RSN
             export = json.loads((tmp / "ge-slots" / f"{rsn}.json").read_text())
             export["exportedAt"] = later
             (tmp / "ge-slots" / f"{rsn}.json").write_text(json.dumps(export))
@@ -1127,7 +1137,7 @@ class OfferAgeAnchorTests(unittest.TestCase):
         stamps must be discarded; a genuinely distinct one must survive."""
         with tempfile.TemporaryDirectory() as d:
             tmp = Path(d)
-            rsn = runelite.CONFIG["rsn"]
+            rsn = _TEST_RSN
             (tmp / "ge-slots").mkdir()
             (tmp / "flipping").mkdir()
             stamp = int((_epoch(self.EXPORTED) - 10 * 3600) * 1000)
@@ -1171,7 +1181,7 @@ class OfferAgeAnchorTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             tmp = Path(d)
             self._write_export(tmp, unknown_time=False)
-            rsn = runelite.CONFIG["rsn"]
+            rsn = _TEST_RSN
             flip = json.loads((tmp / "flipping" / f"{rsn}.json").read_text())
             flip["slotTimers"][0]["tradeStartTime"] = int(
                 (_epoch(self.EXPORTED) - 5 * 3600) * 1000)
@@ -2042,26 +2052,12 @@ class PlanTests(unittest.TestCase):
         self.assertEqual(len(p["active_buys"]), 5)
         self.assertEqual(p["slots"]["active_buys"], 5)
 
-    def test_budget_is_all_of_manual_liquid(self) -> None:
-        with (
-            patch("merch.plan.signals.scan",
-                  return_value=[_sig(1, 100, buy=100, fillable=20_000, ge_limit=20_000)]),
-            patch("merch.plan.signals.active_margin_scan",
-                  return_value={"candidates": [], "rejected": []}),
-            patch("merch.plan.signals.backtest_signal", return_value=_bt(True)),
-            patch("merch.plan.signals.item_signal", return_value=None),
-            patch("merch.plan._open_strategy_by_item", return_value={}),
-        ):
-            p = plan.plan(cash=1_000_000, time_candidate_limit=0)
-
-        self.assertEqual(p["inputs"]["budget_gp"], 1_000_000)
-        self.assertEqual(p["buys"][0]["qty"], 10_000)
-
     def test_deployment_uses_full_liquid(self) -> None:
         p = self._plan([
             _sig(1, 100, buy=100, fillable=20_000, ge_limit=20_000),
         ])
 
+        self.assertEqual(p["inputs"]["budget_gp"], 1_000_000)
         self.assertEqual(p["buys"][0]["qty"], 10_000)
         self.assertEqual(p["deployment"]["planned_gp"], 1_000_000)
         self.assertEqual(p["deployment"]["utilization_pct"], 100.0)
