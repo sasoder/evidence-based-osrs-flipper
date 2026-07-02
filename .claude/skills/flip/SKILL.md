@@ -9,8 +9,9 @@ Follow the **Runtime workflow** section of the repo-root `AGENTS.md` exactly; th
 engine-agnostic contract and this skill only adds Claude Code specifics:
 
 - Step 0: collect the missing inputs with a **single `AskUserQuestion` call** (never plain-text
-  questions). Radio for attendance and slots, multi-select for the four base lanes, gp options
-  `10m` / `50m` / `100m` / `250m` with exact amounts via Other.
+  questions). Radio for attendance and slots; multi-select for lanes with `Balanced (default)`
+  listed first, then the four base lanes; gp options `10m` / `50m` / `100m` / `250m` with exact
+  amounts via Other.
 - Step 3 research: use a subagent only to *interpret* the research digest or chase un-wired
   sources, returning a ≤10-line findings→implication summary — never to fetch raw pages on the
   main thread.

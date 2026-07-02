@@ -28,10 +28,11 @@ one, otherwise one concise message):
   keyboard-dependent lanes and size patient to the 12h window. A short absence (an hour or two)
   is still `intraday`; skip the active lane instead. The planner handles overnight's exclusions
   itself — never adjust lanes for it manually.
-- **Lanes** (multi-select over base lanes only): `Patient` / `Active` / `Time-of-day` / `Probe`.
-  Join selections with commas for `--lanes`; all four is the balanced default. Presets
-  (`balanced`, `conservative`) remain valid as typed input. An active-only request implies
-  at-keyboard; don't ask attendance.
+- **Lanes** (multi-select): `Balanced — all of the below (default)` / `Patient` / `Active` /
+  `Time-of-day` / `Probe`. Lane sets are unioned, so Balanced absorbs any other selection;
+  if it is picked, pass `--lanes balanced` and ignore the rest. Otherwise join the individual
+  picks with commas for `--lanes`. The `conservative` preset remains valid as typed input.
+  An active-only request implies at-keyboard; don't ask attendance.
 - **Slots**: `All free (default)` / `2` / `4`, exact counts welcome → `--max-new-slots`.
 
 Contradiction guard: `overnight` disables the active lane, so active-only + away-8h+ yields an
