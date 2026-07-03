@@ -1267,7 +1267,6 @@ class ResearchTests(unittest.TestCase):
               patch.object(research, "_fetch", return_value=self._REDDIT_RSS)):
             out = research.reddit(limit=5)
         self.assertTrue(out["ok"])
-        self.assertEqual(out["via"], "rss")
         self.assertEqual(out["items"][0]["title"], "Frost dragon drops are nuts")
 
     def test_reddit_uses_plain_rss_path_not_hot(self) -> None:

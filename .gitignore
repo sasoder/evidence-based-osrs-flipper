@@ -12,9 +12,8 @@ data/cache/
 data/incoming/flipping/
 data/incoming/ge-slots/
 
-# local config/secrets/overrides
+# local config
 config/settings.json
-config/settings.local.json
 
 # runtime state lives on this machine, not in the repo
 state/
