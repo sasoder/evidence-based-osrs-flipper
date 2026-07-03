@@ -4,9 +4,20 @@
 Wiki prices, and gives you exact buy/sell/cancel/reprice instructions to type into the GE. It
 never touches the game: you place every offer yourself.
 
+<p align="center">
+  <img src="images/demo.gif" alt="Asking the agent for a flip plan and getting back an action table" width="700">
+</p>
+
 Every call records a reason and a falsifiable prediction (direction, target, deadline), and
-later runs grade those predictions against what actually filled. Inspired by Leverage In
-Action's ["I Tried Using Data Science to Profit in a Video Game Economy"](https://www.youtube.com/watch?v=FhTLApOoWX8).
+later runs grade those predictions against what actually filled. A week of following the calls
+on roughly 85m liquid returned about 16m:
+
+<p align="center">
+  <img src="images/profit-week.png" alt="Flipping Utilities weekly profit graph" height="220">
+</p>
+
+Inspired by Leverage In Action's
+["I Tried Using Data Science to Profit in a Video Game Economy"](https://www.youtube.com/watch?v=FhTLApOoWX8).
 
 ## Getting started
 
@@ -81,14 +92,12 @@ the backtest books the same exit, so holding past it would be grading dishonestl
 
 Each lane has its own entry gates:
 
-- **patient** (2-12h band flips): must be trading at the band's buy target right now, pass a
-  6h regime guard that blocks downtrends (a fat paper margin usually means a downtrend, not
-  oscillation), and stay net positive when the band's rules are replayed over history.
-- **active** (15-90 minute flips, items over 1m): fresh two-sided quotes, after-tax margin and
-  ROI floors, real flow on both sides, and a reported expected loss if the spread doesn't close.
-- **time** (recurring UTC windows): selected on older data, then required to stay profitable on
-  a newer holdout window it has never seen.
-- **probe**: small near-band experiments, capped at 5% of liquid in total.
+| lane | horizon | must pass |
+|---|---|---|
+| **patient** | 2-12h band flips | trading at the band's buy target *now*; 6h regime guard against downtrends (a fat paper margin usually means a downtrend, not oscillation); net positive when the band's rules are replayed over history |
+| **active** | 15-90m, items over 1m | fresh two-sided quotes, after-tax margin and ROI floors, real flow on both sides; reports its expected loss if the spread doesn't close |
+| **time** | recurring UTC windows | selected on older data, then still profitable on a newer holdout window it has never seen |
+| **probe** | small near-band experiments | capped at 5% of liquid in total |
 
 Survivors compete for free slots by expected realized gp/hour, not paper margin: a fat spread
 that fills once a day loses to a thin one that turns over. Quantity is capped by the GE limit
@@ -123,14 +132,11 @@ Your exports and local state stay on disk and out of git:
 ## Why "Evidence"?
 
 Evidence is my RSN, and the suggestions are evidence-based, so the name was sitting right
-there. Here's a week of following the calls on roughly 85m liquid:
+there. The 16m week up top would look more impressive if I wasn't poor.
 
 <p align="center">
-  <img src="images/evidence.png" height="220">
-  <img src="images/profit-week.png" height="220">
+  <img src="images/evidence.png" alt="The RSN Evidence in-game" height="220">
 </p>
-
-About 16m for the week. It would look more impressive if I wasn't poor.
 
 ## Tests
 
