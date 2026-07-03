@@ -399,8 +399,9 @@ def _cost_basis() -> dict[int, int]:
 
 
 def _personal_execution_stats(window_hours: float = signals.FILL_WINDOW_HOURS) -> dict[int, dict]:
+    # Personal stats are an optional sizing cap: missing/unconfigured FU exports must not
+    # block planning, so any failure degrades to "no personal evidence".
     try:
-        from . import execution_stats
         return execution_stats.by_item(window_hours)
     except Exception:
         return {}
@@ -760,7 +761,6 @@ def plan(cash: int, offers: list[dict] | None = None,
         "offer_triage": offer_triage,
         "sell_fills": projection["sell_fills"],
         "projection": {k: v for k, v in projection.items() if k != "sell_fills"},
-        "holds": [],
         "buys": [], "patient_probes": [], "active_buys": [], "time_buys": [],
         "staples": [
             {"id": iid, "name": item.get("name"), **item["round_trip"]}
@@ -771,7 +771,6 @@ def plan(cash: int, offers: list[dict] | None = None,
         "time_skipped": [], "time_filter_summary": {},
     }
 
-    protected: set[int] = set()
     on_offer = {
         o["id"] for o, row in zip(offers, offer_triage)
         if row.get("verdict") in {"hold", "reprice"}
@@ -799,10 +798,6 @@ def plan(cash: int, offers: list[dict] | None = None,
             out["time_skipped"].append({"id": iid, "name": sig["name"],
                                         "reason": "research avoid"})
             continue
-        if iid in protected:
-            out["time_skipped"].append({"id": iid, "name": sig["name"],
-                                        "reason": "protected hold"})
-            continue
         if iid in on_offer:
             out["time_skipped"].append({"id": iid, "name": sig["name"],
                                         "reason": "already on offer"})
@@ -824,9 +819,6 @@ def plan(cash: int, offers: list[dict] | None = None,
         iid = sig["id"]
         if iid in avoid:
             out["skipped"].append({"id": iid, "name": sig["name"], "reason": "research avoid"})
-            continue
-        if iid in protected:
-            out["skipped"].append({"id": iid, "name": sig["name"], "reason": "protected hold"})
             continue
         if iid in on_offer:
             out["skipped"].append({"id": iid, "name": sig["name"], "reason": "already on offer"})
@@ -899,8 +891,6 @@ def plan(cash: int, offers: list[dict] | None = None,
         iid = sig["id"]
         if iid in avoid:
             out["active_skipped"].append({"id": iid, "name": sig["name"], "reason": "research avoid"})
-        elif iid in protected:
-            out["active_skipped"].append({"id": iid, "name": sig["name"], "reason": "protected hold"})
         elif iid in on_offer:
             out["active_skipped"].append({"id": iid, "name": sig["name"],
                                           "reason": "already on offer"})
@@ -1080,12 +1070,8 @@ def plan(cash: int, offers: list[dict] | None = None,
 def _render_md(p: dict) -> str:
     L = [f"# Plan — {p['generated_at']}",
          f"liquid {p['inputs']['liquid_gp']:,}gp (manual) · "
-         f"slots {p['slots']['new_buys']+p['slots'].get('patient_probes', 0)+p['slots'].get('active_buys', 0)+p['slots'].get('time_buys', 0)}"
-         f"+{p['slots']['open_offers']} used / {p['slots']['max']}"
-         if "slots" in p else ""]
-    if p.get("error"):
-        L.append(f"\n**{p['error']}**")
-        return "\n".join(L)
+         f"slots {p['slots']['new_buys']+p['slots']['patient_probes']+p['slots']['active_buys']+p['slots']['time_buys']}"
+         f"+{p['slots']['open_offers']} used / {p['slots']['max']}"]
     deployment = p.get("deployment")
     if deployment:
         L.append(
@@ -1111,9 +1097,6 @@ def _render_md(p: dict) -> str:
                 f"{_fmt(r['qty'])} | {_fmt(r['price'])} | "
                 f"{_fmt(r['sell_target'])} | {_fmt(r['deadline'])} | {_fmt(r['reason'])} |"
             )
-    hits = [h for h in p["holds"] if h["flag"] != "hold"]
-    if hits:
-        L += ["", "## Holds needing attention"] + [f"- {h['name']}: {h['flag']}" for h in hits]
     return "\n".join(L)
 
 
@@ -1159,7 +1142,6 @@ def _main(argv: list[str]) -> int:
     args = ap.parse_args(argv)
 
     if args.offers is None:
-        from . import runelite
         try:
             offers = runelite.read_open_offers()
         except RuntimeError as e:
@@ -1182,7 +1164,7 @@ def _main(argv: list[str]) -> int:
     except ValueError as e:
         print(f"error: {e}", file=sys.stderr)
         return 1
-    if args.write_intents and not p.get("error"):
+    if args.write_intents:
         from . import intents
 
         written = intents.write_intents(intents.intents_from_plan(p))

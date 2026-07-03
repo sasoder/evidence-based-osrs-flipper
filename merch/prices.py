@@ -26,7 +26,7 @@ from concurrent.futures import ThreadPoolExecutor
 from functools import lru_cache
 
 from . import cache
-from .config import ROOT, load_config
+from .config import load_config
 
 CONFIG = load_config()
 BASE = CONFIG["wiki_api_base"]
