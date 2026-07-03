@@ -29,9 +29,9 @@ from . import cache
 from .config import load_config
 
 CONFIG = load_config()
-BASE = CONFIG["wiki_api_base"]
+BASE = CONFIG.get("wiki_api_base", "https://prices.runescape.wiki/api/v1/osrs")
 UA = CONFIG["user_agent"]
-TIMEOUT = CONFIG["request_timeout_seconds"]
+TIMEOUT = CONFIG.get("request_timeout_seconds", 20)
 
 # TTLs reflect how often upstream actually changes: the mapping is near-static, while the
 # real-time aggregates refresh on their own period (latest ~continuously, 5m/1h on the bucket).

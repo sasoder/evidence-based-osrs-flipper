@@ -29,6 +29,6 @@ target.write_text(json.dumps(data, indent=2) + "\n")
 print(f"wrote {target}")
 PY
 
-mkdir -p data/incoming/flipping data/incoming/ge-slots reports state
+mkdir -p data/incoming/flipping data/incoming/ge-slots state
 
 echo "setup complete"

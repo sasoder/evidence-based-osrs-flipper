@@ -18,7 +18,6 @@ config/settings.local.json
 
 # runtime state lives on this machine, not in the repo
 state/
-reports/*.md
 overlay.json
 
 # engine-local files

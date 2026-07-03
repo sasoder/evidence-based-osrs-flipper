@@ -90,7 +90,8 @@ run the planner once with `--write-intents --markdown` and present the result.
 ### 3. Optional slower research overlay
 
 Skip research unless the user asks for catalysts/news or the request is clearly event-driven.
-If triggered, follow `docs/research.md` exactly. Research never bypasses the strategy gate.
+If triggered, follow `research.md` (in this skill's directory) exactly. Research never bypasses
+the strategy gate.
 
 ### 4. Present + tag intent
 
@@ -224,7 +225,7 @@ liquidity, budget, or slot gates.
 - External research is optional in `/flip` because it often adds latency without changing gated
   survivors. Run `uv run python -m merch.research brief` only when the user asks for
   research/catalysts/news or the request is clearly event-driven; the full procedure lives in
-  `docs/research.md`. If used, it never fails silently:
+  this skill's `research.md`. If used, it never fails silently:
   an unreachable source returns a concrete `error` (e.g. `HTTP 403`) you must cite — never a vague
   "web checks unavailable".
 
