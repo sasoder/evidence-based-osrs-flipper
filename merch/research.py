@@ -1,24 +1,13 @@
-"""Deterministic catalyst-research gather.
+"""Catalyst-research gather: OSRS news RSS plus configured subreddits, as one digest.
 
-The edge in this account isn't the price bands — those are deterministic and self-grading.
-It's catching *why* a price is about to move: an update, a meta shift, a community reaction.
-That signal lives on external sources (official OSRS news/blogs, r/2007scape), and historically
-the brief delegated it to subagents with web tools — which silently failed when the toolset was
-too narrow, leaving the report to shrug "web checks unavailable".
+Each source degrades gracefully — on failure it returns a concrete `error` string the brief
+must cite, never a vague "unavailable". Plain urllib with a hard timeout, no caching: this
+runs ~once per session and freshness is the whole point.
 
-This module makes the gather deterministic, like every other input: fetch compact summaries
-over plain HTTP and return them. Each source degrades gracefully — on failure it returns a
-concrete `error` string the brief must cite, never a vague "unavailable". Subagents should be
-used to *interpret* this digest into positioning, not to fetch it.
-
-Network use mirrors merch.prices: urllib with the configured descriptive User-Agent (generic
-UAs like python-urllib get blocked/ratelimited by both the Wiki and Reddit), and a hard
-timeout. No caching — this runs ~once per session and freshness is the whole point.
-
-Reddit: read via the public **/.rss** feed with a browser User-Agent. The descriptive wiki UA
-and the /hot.rss path both 403; the plain /.rss path + browser UA serves fine at our
-once-per-session rate. `research.subreddit` may be one name or a list; results are merged.
-RSS omits score/comments — titles are the catalyst signal, which is all this gather needs.
+Reddit is read from the public /.rss feed with a browser User-Agent (the descriptive wiki UA
+and the /hot.rss path both 403; the plain /.rss path serves fine at our once-per-session
+rate). `research.subreddit` may be one name or a list; results are merged. RSS omits
+score/comments — titles are the catalyst signal, which is all this gather needs.
 
 CLI:
     python -m merch.research brief      # compact digest across all sources
