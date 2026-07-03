@@ -132,7 +132,7 @@ class SignalTests(unittest.TestCase):
 
     def test_near_band_bid_is_probe_only_not_production_ready(self) -> None:
         # The live low (102) sits 2% above the band (100). That is not evidence that the band
-        # recently traded, so production stays blocked while the experimental probe lane may bid.
+        # recently traded, so production stays blocked while the experimental probe strategy may bid.
         now = int(time.time())
         with (
             patch("merch.prices.mapping_by_id", return_value={1: {"id": 1, "name": "Test item", "limit": 100}}),
@@ -1360,7 +1360,7 @@ def _bt(ok=True):
 
 class PlanTests(unittest.TestCase):
     def _plan(self, scan_sigs, *, active=None, time_scan=None, bt=lambda i: _bt(True), item=lambda i: None,
-              quote=lambda i: None, cost_map=None, strategies=None, personal=None, **kw):
+              quote=lambda i: None, cost_map=None, open_strategies=None, personal=None, **kw):
         with (
             patch("merch.plan.signals.scan", return_value=scan_sigs),
             patch("merch.plan.signals.active_margin_scan",
@@ -1372,11 +1372,11 @@ class PlanTests(unittest.TestCase):
             patch("merch.plan.signals.live_quote", side_effect=lambda iid: quote(iid)),
             patch("merch.plan._cost_basis", return_value=cost_map or {}),
             patch("merch.plan._personal_execution_stats", return_value=personal or {}),
-            patch("merch.plan._open_strategy_by_item", return_value=strategies or {}),
+            patch("merch.plan._open_strategy_by_item", return_value=open_strategies or {}),
         ):
             return plan.plan(cash=1_000_000, **kw)
 
-    def test_time_of_day_lane_uses_available_capital_not_a_percentage_cap(self) -> None:
+    def test_time_of_day_strategy_uses_available_capital_not_a_percentage_cap(self) -> None:
         time_scan = {"candidates": [{
             "id": 7,
             "name": "Timed item",
@@ -1419,7 +1419,7 @@ class PlanTests(unittest.TestCase):
             for i in range(1, 4)
         ], "rejected": []}
 
-        p = self._plan([], time_scan=time_scan, lanes="time", max_new_slots=3)
+        p = self._plan([], time_scan=time_scan, strategies="time", max_new_slots=3)
 
         self.assertEqual(len(p["time_buys"]), 3)
         self.assertEqual(p["slots"]["time_buys"], 3)
@@ -1528,7 +1528,7 @@ class PlanTests(unittest.TestCase):
             for i in range(1, 3)
         ]
 
-        p = self._plan(sigs, lanes="probe", max_new_slots=2)
+        p = self._plan(sigs, strategies="probe", max_new_slots=2)
 
         self.assertEqual(len(p["patient_probes"]), 2)
         self.assertEqual([b["qty"] for b in p["patient_probes"]], [250, 250])
@@ -1539,7 +1539,7 @@ class PlanTests(unittest.TestCase):
         p = self._plan([_sig(1, 100, fillable=50)])
         self.assertEqual(p["buys"][0]["qty"], 50)
 
-    def test_active_lane_sizes_to_ge_limit_and_available_gp(self) -> None:
+    def test_active_strategy_sizes_to_ge_limit_and_available_gp(self) -> None:
         active = _active_scan()
         p = self._plan([], active=active)
 
@@ -1549,7 +1549,7 @@ class PlanTests(unittest.TestCase):
         self.assertEqual(p["active_buys"][0]["bucket"], "flip-active")
         self.assertEqual(p["slots"]["active_buys"], 1)
 
-    def test_lanes_can_select_patient_only(self) -> None:
+    def test_strategies_can_select_patient_only(self) -> None:
         active = _active_scan()
         time_scan = {"candidates": [{
             "id": 8, "name": "Timed item", "buy": 100, "sell": 120,
@@ -1563,15 +1563,15 @@ class PlanTests(unittest.TestCase):
             [_sig(1, 100, buy=100, fillable=50)],
             active=active,
             time_scan=time_scan,
-            lanes="patient",
+            strategies="patient",
         )
 
         self.assertEqual([b["id"] for b in p["buys"]], [1])
         self.assertEqual(p["active_buys"], [])
         self.assertEqual(p["time_buys"], [])
-        self.assertEqual(p["inputs"]["lanes"], ["patient"])
+        self.assertEqual(p["inputs"]["strategies"], ["patient"])
 
-    def test_lanes_can_select_active_only(self) -> None:
+    def test_strategies_can_select_active_only(self) -> None:
         active = _active_scan()
 
         personal = {
@@ -1591,14 +1591,14 @@ class PlanTests(unittest.TestCase):
             [_sig(1, 100, buy=100, fillable=50)],
             active=active,
             personal=personal,
-            lanes="active",
+            strategies="active",
         )
 
         self.assertEqual(p["buys"], [])
         self.assertEqual(len(p["active_buys"]), 1)
-        self.assertEqual(p["inputs"]["lanes"], ["active"])
+        self.assertEqual(p["inputs"]["strategies"], ["active"])
 
-    def test_conservative_lanes_exclude_patient_probes(self) -> None:
+    def test_conservative_strategies_exclude_patient_probes(self) -> None:
         sig = {
             **_sig(1, 100, buy=100, fillable=1000),
             "ready_to_buy": False,
@@ -1607,23 +1607,23 @@ class PlanTests(unittest.TestCase):
             "current_low": 102,
         }
 
-        p = self._plan([sig], lanes="conservative")
+        p = self._plan([sig], strategies="conservative")
 
         self.assertEqual(p["patient_probes"], [])
-        self.assertEqual(p["inputs"]["lanes"], ["active", "patient", "time"])
-        self.assertEqual(p["skipped"][0]["reason"], "patient-probe lane disabled")
+        self.assertEqual(p["inputs"]["strategies"], ["active", "patient", "time"])
+        self.assertEqual(p["skipped"][0]["reason"], "patient-probe strategy disabled")
 
-    def test_overnight_horizon_excludes_active_lane_before_intents(self) -> None:
+    def test_overnight_horizon_excludes_active_strategy_before_intents(self) -> None:
         active = _active_scan()
         p = self._plan([], active=active, horizon="overnight")
 
         self.assertEqual(p["inputs"]["horizon"], "overnight")
         self.assertEqual(p["active_buys"], [])
         self.assertEqual(intents.intents_from_plan(p), [])
-        self.assertTrue(any("active lane disabled" in reason
+        self.assertTrue(any("active strategy disabled" in reason
                             for reason in p["active_filter_summary"]))
 
-    def test_away_hours_excludes_active_lane_before_intents(self) -> None:
+    def test_away_hours_excludes_active_strategy_before_intents(self) -> None:
         active = _active_scan()
         p = self._plan([], active=active, away_hours=3)
 
@@ -1631,10 +1631,10 @@ class PlanTests(unittest.TestCase):
         self.assertEqual(p["inputs"]["away_hours"], 3)
         self.assertEqual(p["active_buys"], [])
         self.assertEqual(intents.intents_from_plan(p), [])
-        self.assertTrue(any("active lane disabled" in reason
+        self.assertTrue(any("active strategy disabled" in reason
                             for reason in p["active_filter_summary"]))
 
-    def test_brief_absence_keeps_active_lane(self) -> None:
+    def test_brief_absence_keeps_active_strategy(self) -> None:
         active = _active_scan()
         p = self._plan([], active=active, away_hours=0.25)
 
@@ -1658,7 +1658,7 @@ class PlanTests(unittest.TestCase):
 
     def test_active_only_while_away_is_a_contradiction(self) -> None:
         with self.assertRaises(ValueError) as ctx:
-            self._plan([], lanes="active", away_hours=3)
+            self._plan([], strategies="active", away_hours=3)
         self.assertIn("contradiction", str(ctx.exception))
 
     def test_overnight_horizon_sizes_patient_scan_to_twelve_hour_window(self) -> None:
@@ -1906,7 +1906,7 @@ class PlanTests(unittest.TestCase):
         }
         row = self._plan(
             [], item=lambda i: sig, offers=offers,
-            strategies={1: {"strategy": "patient-probe"}},
+            open_strategies={1: {"strategy": "patient-probe"}},
         )["offer_triage"][0]
         self.assertEqual(row["verdict"], "hold")
         self.assertIn("never reprice upward", row["note"])
@@ -2140,7 +2140,7 @@ class PlanTests(unittest.TestCase):
             for i in range(1, 6)
         ], "rejected": []}
 
-        p = self._plan([], active=active, lanes="active", max_new_slots=5)
+        p = self._plan([], active=active, strategies="active", max_new_slots=5)
 
         self.assertEqual(len(p["active_buys"]), 5)
         self.assertEqual(p["slots"]["active_buys"], 5)

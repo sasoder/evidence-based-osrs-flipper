@@ -51,10 +51,10 @@ PLAN_HORIZONS = {"intraday", "overnight"}
 OVERNIGHT_FILL_WINDOW_HOURS = signals.MAX_HOLD_HOURS
 OVERNIGHT_AWAY_HOURS = 8      # away this long or more is the overnight horizon, not a short absence
 PERSONAL_CANDIDATE_LIMIT = 25
-DEFAULT_LANES = frozenset({"patient", "probe", "time", "active"})
-LANE_ALIASES = {
-    "all": DEFAULT_LANES,
-    "balanced": DEFAULT_LANES,
+DEFAULT_STRATEGIES = frozenset({"patient", "probe", "time", "active"})
+STRATEGY_ALIASES = {
+    "all": DEFAULT_STRATEGIES,
+    "balanced": DEFAULT_STRATEGIES,
     "conservative": frozenset({"patient", "time", "active"}),
     "none": frozenset(),
     "triage": frozenset(),
@@ -69,21 +69,23 @@ LANE_ALIASES = {
 }
 
 
-def _normalize_lanes(lanes: str | list[str] | set[str] | tuple[str, ...] | None) -> set[str]:
-    if lanes is None:
-        return set(DEFAULT_LANES)
-    raw = [lanes] if isinstance(lanes, str) else list(lanes)
+def _normalize_strategies(
+    strategies: str | list[str] | set[str] | tuple[str, ...] | None,
+) -> set[str]:
+    if strategies is None:
+        return set(DEFAULT_STRATEGIES)
+    raw = [strategies] if isinstance(strategies, str) else list(strategies)
     chosen: set[str] = set()
     for value in raw:
         for part in str(value).split(","):
             key = part.strip().lower()
             if not key:
                 continue
-            if key not in LANE_ALIASES:
+            if key not in STRATEGY_ALIASES:
                 raise ValueError(
-                    f"unknown lane {part!r}; expected one of {sorted(LANE_ALIASES)}"
+                    f"unknown strategy {part!r}; expected one of {sorted(STRATEGY_ALIASES)}"
                 )
-            chosen.update(LANE_ALIASES[key])
+            chosen.update(STRATEGY_ALIASES[key])
     return chosen
 
 
@@ -307,7 +309,7 @@ def _action_rows(p: dict) -> list[dict]:
         action = o["verdict"]
         price = o.get("new_price") if action == "reprice" else o.get("price")
         add(
-            lane="open-offer",
+            strategy="open-offer",
             action=action,
             item=o.get("name"),
             side=o.get("side"),
@@ -321,7 +323,7 @@ def _action_rows(p: dict) -> list[dict]:
         )
     for b in p.get("sell_fills", []):
         add(
-            lane="sell-fill",
+            strategy="sell-fill",
             action="sell",
             item=b.get("name"),
             side="sell",
@@ -333,7 +335,7 @@ def _action_rows(p: dict) -> list[dict]:
             deadline=b.get("predicted", {}).get("by", ""),
             reason=b.get("reason"),
         )
-    for section, lane in (
+    for section, strategy in (
         ("buys", "patient"),
         ("patient_probes", "probe"),
         ("time_buys", "time-of-day"),
@@ -341,7 +343,7 @@ def _action_rows(p: dict) -> list[dict]:
     ):
         for b in p.get(section, []):
             add(
-                lane=lane,
+                strategy=strategy,
                 action=b.get("action"),
                 item=b.get("name"),
                 side=b.get("action"),
@@ -741,7 +743,8 @@ def plan(cash: int, offers: list[dict] | None = None,
          active_seed_limit: int | None = None, active_candidate_limit: int = 20,
          time_seed_limit: int = 80, time_candidate_limit: int = 10,
          horizon: str = "intraday", lanes: str | list[str] | set[str] | tuple[str, ...] | None = None,
-         max_new_slots: int | None = None, away_hours: float | None = None) -> dict:
+         max_new_slots: int | None = None, away_hours: float | None = None,
+         strategies: str | list[str] | set[str] | tuple[str, ...] | None = None) -> dict:
     if horizon not in PLAN_HORIZONS:
         raise ValueError(f"unknown plan horizon {horizon!r}; expected one of {sorted(PLAN_HORIZONS)}")
     if cash is None:
@@ -752,20 +755,23 @@ def plan(cash: int, offers: list[dict] | None = None,
         raise ValueError(f"max_new_slots must be between 0 and {MAX_SLOTS}")
     if away_hours is not None and away_hours < 0:
         raise ValueError("away_hours must be non-negative")
+    if lanes is not None and strategies is not None:
+        raise ValueError("pass either strategies or lanes, not both")
+    strategy_input = strategies if strategies is not None else lanes
     # Attendance is one concept: overnight is just "away long enough". Either input implies the
-    # other so no lane can see a horizon that contradicts the stated absence.
+    # other so no strategy can see a horizon that contradicts the stated absence.
     if horizon == "overnight":
         away_hours = max(away_hours or 0, OVERNIGHT_FILL_WINDOW_HOURS)
     if away_hours is not None and away_hours >= OVERNIGHT_AWAY_HOURS:
         horizon = "overnight"
-    enabled_lanes = _normalize_lanes(lanes)
-    # A lane is unattendable when its first required management action lands inside the absence.
+    enabled_strategies = _normalize_strategies(strategy_input)
+    # A strategy is unattendable when its first required management action lands inside the absence.
     active_unattended = away_hours is not None and away_hours * 60 >= ACTIVE_CANCEL_MINUTES
-    if active_unattended and enabled_lanes and enabled_lanes <= {"active"}:
+    if active_unattended and enabled_strategies and enabled_strategies <= {"active"}:
         raise ValueError(
-            f"contradiction: only the active lane is requested but you are away "
+            f"contradiction: only the active strategy is requested but you are away "
             f"{away_hours:g}h; active offers need management within {ACTIVE_CANCEL_MINUTES}m — "
-            "reduce the absence or allow other lanes"
+            "reduce the absence or allow other strategies"
         )
     offers = offers or []
     overlay = overlay or {}
@@ -792,7 +798,7 @@ def plan(cash: int, offers: list[dict] | None = None,
                    "profit_floor_gp": profit_floor,
                    "horizon": horizon,
                    "away_hours": away_hours,
-                   "lanes": sorted(enabled_lanes),
+                   "strategies": sorted(enabled_strategies),
                    "max_new_slots": max_new_slots},
         "offer_triage": offer_triage,
         "sell_fills": projection["sell_fills"],
@@ -816,11 +822,11 @@ def plan(cash: int, offers: list[dict] | None = None,
         free_slots = min(free_slots, max_new_slots)
     budget_left = projection["budget_left"]
 
-    # Daily UTC-pattern experiment. This lane is selected on older 6h history and must remain
+    # Daily UTC-pattern experiment. This strategy is selected on older 6h history and must remain
     # profitable on the newest 30% before it can compete for slots.
     time_scan = (
         signals.time_of_day_scan(seed_limit=time_seed_limit, limit=time_candidate_limit)
-        if "time" in enabled_lanes and time_candidate_limit > 0 else
+        if "time" in enabled_strategies and time_candidate_limit > 0 else
         {"candidates": [], "evaluated": 0, "rejected_count": 0}
     )
     out["time_filter_summary"] = {
@@ -844,7 +850,7 @@ def plan(cash: int, offers: list[dict] | None = None,
     survivors = []
     probe_survivors = []
     patient_candidates = []
-    if {"patient", "probe"} & enabled_lanes:
+    if {"patient", "probe"} & enabled_strategies:
         patient_scan = signals.scan(
             seed_limit=seed_limit,
             limit=candidate_limit,
@@ -870,18 +876,18 @@ def plan(cash: int, offers: list[dict] | None = None,
                                               f"{PATIENT_MIN_NET_MARGIN_GP}gp floor — single-coin "
                                               "spread, no real edge")})
             continue
-        lane = "production" if sig["ready_to_buy"] else (
+        strategy_group = "production" if sig["ready_to_buy"] else (
             "patient-probe" if sig.get("patient_probe_ready") else None
         )
-        if lane == "production" and "patient" not in enabled_lanes:
+        if strategy_group == "production" and "patient" not in enabled_strategies:
             out["skipped"].append({"id": iid, "name": sig["name"],
-                                   "reason": "patient lane disabled"})
+                                   "reason": "patient strategy disabled"})
             continue
-        if lane == "patient-probe" and "probe" not in enabled_lanes:
+        if strategy_group == "patient-probe" and "probe" not in enabled_strategies:
             out["skipped"].append({"id": iid, "name": sig["name"],
-                                   "reason": "patient-probe lane disabled"})
+                                   "reason": "patient-probe strategy disabled"})
             continue
-        if lane is None:
+        if strategy_group is None:
             out["skipped"].append({"id": iid, "name": sig["name"],
                                    "reason": (f"live low {sig.get('distance_to_buy_pct')}% above band "
                                               f"— outside the {signals.PATIENT_PROBE_MAX_DISTANCE_PCT:g}% "
@@ -897,18 +903,18 @@ def plan(cash: int, offers: list[dict] | None = None,
         if not bt:
             out["skipped"].append({"id": iid, "name": sig["name"], "reason": "fails survival gate"})
             continue
-        (survivors if lane == "production" else probe_survivors).append((sig, bt))
+        (survivors if strategy_group == "production" else probe_survivors).append((sig, bt))
 
-    # Active high-value lane: current after-tax spread probes, not percentile-band holds. Scanned
-    # up-front so it competes for the same free slots as the patient/time lanes by expected realized
+    # Active high-value strategy: current after-tax spread probes, not percentile-band holds. Scanned
+    # up-front so it competes for the same free slots as the patient/time strategies by expected realized
     # gp/hour, rather than only inheriting whatever slots they leave behind.
-    if "active" not in enabled_lanes:
+    if "active" not in enabled_strategies:
         active_scan = {"candidates": [], "rejected": []}
     elif active_unattended:
         active_scan = {
             "candidates": [],
             "rejected": [{"reason": (
-                f"active lane disabled: away {away_hours:g}h, but active offers need "
+                f"active strategy disabled: away {away_hours:g}h, but active offers need "
                 f"management within {ACTIVE_CANCEL_MINUTES}m"
             )}],
         }
@@ -964,29 +970,29 @@ def plan(cash: int, offers: list[dict] | None = None,
     ]
     allocations.sort(key=lambda row: row[:2])
 
-    # Validated patient, time-of-day, and active lanes compete for the free slots by expected
+    # Validated patient, time-of-day, and active strategies compete for the free slots by expected
     # realized gp/hour.
     selected_ids = set()
-    for _, _, lane, sig, bt in allocations:
+    for _, _, strategy_type, sig, bt in allocations:
         if free_slots <= 0:
             break
         if sig["id"] in selected_ids:
             continue
         skip_target = (
-            out["skipped"] if lane == "patient"
-            else out["active_skipped"] if lane == "active"
+            out["skipped"] if strategy_type == "patient"
+            else out["active_skipped"] if strategy_type == "active"
             else out["time_skipped"]
         )
         buy = sig["buy"] or 0
         evidence = None
-        if lane == "patient":
+        if strategy_type == "patient":
             personal_fillable, evidence = execution_stats.adjusted_fillable_qty(
                 sig["id"], sig["fillable_qty"] or 0, personal_stats
             )
             qty = min(personal_fillable, (budget_left // buy) if buy else 0,
                       sig["ge_limit"] or 10**9)
             per_unit = bt["avg_profit_per_unit"]
-        elif lane == "active":
+        elif strategy_type == "active":
             # active scan already caps fillable_qty by GE limit and two-sided flow.
             qty = min(sig["fillable_qty"] or 0, (budget_left // buy) if buy else 0)
             per_unit = sig["expected_value_per_unit"]
@@ -1005,10 +1011,10 @@ def plan(cash: int, offers: list[dict] | None = None,
                 "reason": f"expected profit {expected_profit:,}gp < floor {profit_floor:,}gp",
             })
             continue
-        if lane == "patient":
+        if strategy_type == "patient":
             staple = (personal_stats.get(sig["id"]) or {}).get("round_trip")
             out["buys"].append(_buy_row(sig, bt, qty, evidence, staple))
-        elif lane == "active":
+        elif strategy_type == "active":
             out["active_buys"].append(_active_buy_row(sig, qty, expected_profit))
         else:
             out["time_buys"].append(_time_buy_row(sig, qty))
@@ -1016,7 +1022,7 @@ def plan(cash: int, offers: list[dict] | None = None,
         free_slots -= 1
         selected_ids.add(sig["id"])
 
-    # Experimental near-band lane. It uses the same survival gate but does not pretend that the
+    # Experimental near-band strategy. It uses the same survival gate but does not pretend that the
     # backtest validates fills above the band. The total capital cap creates the execution evidence
     # needed to calibrate or reject the distance rule later without letting probes dominate.
     probe_survivors.sort(key=lambda sb: -(
@@ -1162,19 +1168,20 @@ def _main(argv: list[str]) -> int:
     ap.add_argument("--time-limit", type=int, default=10)
     ap.add_argument("--horizon", choices=sorted(PLAN_HORIZONS), default="intraday",
                     help=("overnight means away 12h+: sizes patient to the 12h window and, like "
-                          "any sufficient --away-hours, excludes keyboard-dependent lanes"))
+                          "any sufficient --away-hours, excludes keyboard-dependent strategies"))
     ap.add_argument("--away-hours", type=float, default=None,
-                    help=("hours the user will be away from the keyboard; disables lanes whose "
+                    help=("hours the user will be away from the keyboard; disables strategies whose "
                           f"offers need management sooner (active: {ACTIVE_CANCEL_MINUTES}m); "
                           f"{OVERNIGHT_AWAY_HOURS}h+ implies --horizon overnight"))
     ap.add_argument(
-        "--lanes",
+        "--strategies",
         default=None,
-        help=("comma-separated lanes to allow: balanced/all, conservative, patient, probe, "
+        help=("comma-separated strategies to allow: balanced/all, conservative, patient, probe, "
               "time, active, or triage/none"),
     )
+    ap.add_argument("--lanes", dest="lanes", default=None, help=argparse.SUPPRESS)
     ap.add_argument("--max-new-slots", type=int, default=None,
-                    help="maximum number of new buy offers to recommend after open-offer triage")
+                    help="maximum number of new buy offers to recommend after checking open offers")
     ap.add_argument("--write-intents", action="store_true",
                     help="write pending FU intent tags for new recommendations")
     ap.add_argument("--markdown", action="store_true")
@@ -1197,6 +1204,7 @@ def _main(argv: list[str]) -> int:
                  time_seed_limit=args.time_seed_limit,
                  time_candidate_limit=args.time_limit,
                  horizon=args.horizon,
+                 strategies=args.strategies,
                  lanes=args.lanes,
                  max_new_slots=args.max_new_slots,
                  away_hours=args.away_hours)
