@@ -1872,7 +1872,8 @@ class PlanTests(unittest.TestCase):
             "current_low": 102,
         }
         row = self._plan(
-            [], item=lambda i: sig, offers=offers, strategies={1: "patient-probe"}
+            [], item=lambda i: sig, offers=offers,
+            strategies={1: {"strategy": "patient-probe"}},
         )["offer_triage"][0]
         self.assertEqual(row["verdict"], "hold")
         self.assertIn("never reprice upward", row["note"])

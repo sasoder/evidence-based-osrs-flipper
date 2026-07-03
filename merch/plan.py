@@ -480,18 +480,12 @@ def _open_strategy_by_item(offers: list[dict]) -> dict[int, dict]:
 
 
 def _triage_offer(offer: dict, cost_map: dict[int, int] | None = None,
-                  strategy_by_item: Mapping[int, dict | str] | None = None) -> dict:
+                  strategy_by_item: Mapping[int, dict] | None = None) -> dict:
     """hold / reprice / cancel verdict for one open GE offer, vs the current band."""
     sig = signals.item_signal(offer["id"])
     quote = sig or signals.live_quote(offer["id"])
     cost = (cost_map or {}).get(offer["id"])
-    strategy_context = (strategy_by_item or {}).get(
-        offer.get("slot", offer["id"]),
-        (strategy_by_item or {}).get(offer["id"]),
-    )
-    if isinstance(strategy_context, str):
-        strategy_context = {"strategy": strategy_context}
-    strategy_context = strategy_context or {}
+    strategy_context = (strategy_by_item or {}).get(offer.get("slot", offer["id"])) or {}
     strategy = strategy_context.get("strategy")
     hard_exit_due = _deadline_due(strategy_context.get("hard_exit_at"))
     res = _apply_cost_guard(

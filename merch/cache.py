@@ -30,10 +30,7 @@ def _path(key: str) -> Path:
 
 def get_or_set(key: str, ttl_seconds: float, producer):
     """Return cached value for ``key`` if it is younger than ``ttl_seconds``; otherwise call
-    ``producer()``, store the result, and return it. ``ttl_seconds <= 0`` bypasses the cache."""
-    if ttl_seconds <= 0:
-        return producer()
-
+    ``producer()``, store the result, and return it."""
     path = _path(key)
     if path.exists():
         try:
