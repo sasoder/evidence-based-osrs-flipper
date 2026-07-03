@@ -129,7 +129,6 @@ Your exports and local state stay on disk and out of git:
 
 - `data/incoming/flipping/`, `data/incoming/ge-slots/`
 - `state/offer_ages.json`, `state/offer_fills.json`
-- `reports/*.md`
 
 ## Why "Evidence"?
 

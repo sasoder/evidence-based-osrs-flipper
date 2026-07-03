@@ -23,7 +23,7 @@ from pathlib import Path
 from .config import ROOT, load_config
 
 CONFIG = load_config()
-INCOMING = ROOT / CONFIG["incoming_dir"]
+INCOMING = ROOT / CONFIG.get("incoming_dir", "data/incoming")
 
 
 def _configured_rsn() -> str | None:
