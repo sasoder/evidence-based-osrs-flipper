@@ -762,6 +762,8 @@ class FlipParsingTests(unittest.TestCase):
 
             with (
                 patch.object(runelite, "INCOMING", tmp),
+                patch.object(runelite, "_OFFER_AGE_PATH", tmp / "offer_ages.json"),
+                patch.object(runelite, "_FILL_ANCHOR_PATH", tmp / "offer_fills.json"),
                 patch.dict(runelite.CONFIG, {"rsn": _TEST_RSN, "offer_snapshot_stale_minutes": 999999}),
             ):
                 offers = runelite.read_open_offers()
@@ -826,6 +828,8 @@ class FlipParsingTests(unittest.TestCase):
 
             with (
                 patch.object(runelite, "INCOMING", tmp),
+                patch.object(runelite, "_OFFER_AGE_PATH", tmp / "offer_ages.json"),
+                patch.object(runelite, "_FILL_ANCHOR_PATH", tmp / "offer_fills.json"),
                 patch.dict(runelite.CONFIG, {"rsn": _TEST_RSN, "offer_snapshot_stale_minutes": 999999}),
             ):
                 offers = runelite.read_open_offers()
@@ -881,6 +885,7 @@ class FlipParsingTests(unittest.TestCase):
 
             with (
                 patch.object(runelite, "INCOMING", tmp),
+                patch.object(runelite, "_OFFER_AGE_PATH", tmp / "offer_ages.json"),
                 patch.object(runelite, "_FILL_ANCHOR_PATH", tmp / "offer_fills.json"),
                 patch.dict(runelite.CONFIG, {"rsn": _TEST_RSN, "offer_snapshot_stale_minutes": 999999}),
             ):
@@ -1026,17 +1031,25 @@ class OpenOfferContractTests(unittest.TestCase):
     """Open offers must come from the enriched current-slot export."""
 
     def test_plan_rejects_open_offer_without_limit_price(self) -> None:
-        with self.assertRaisesRegex(ValueError, "no limit price"):
-            plan.plan(cash=1_000_000, offers=[{
-                "slot": 0,
-                "id": 13237,
-                "side": "buy",
-                "qty": 1,
-                "filled_qty": 0,
-                "price": 0,
-                "age_hours": 0.1,
-                "state": "ACTIVE",
-            }])
+        # Patch every data source: this must fail on the offer contract, not on
+        # whatever FU exports / price cache happen to exist on this machine.
+        with (
+            patch("merch.plan.signals.item_signal", return_value=None),
+            patch("merch.plan.signals.live_quote", return_value=None),
+            patch("merch.plan._cost_basis", return_value={}),
+            patch("merch.plan._personal_execution_stats", return_value={}),
+        ):
+            with self.assertRaisesRegex(ValueError, "no limit price"):
+                plan.plan(cash=1_000_000, offers=[{
+                    "slot": 0,
+                    "id": 13237,
+                    "side": "buy",
+                    "qty": 1,
+                    "filled_qty": 0,
+                    "price": 0,
+                    "age_hours": 0.1,
+                    "state": "ACTIVE",
+                }])
 
     def test_plan_cli_reports_stale_export_without_traceback(self) -> None:
         err = io.StringIO()
