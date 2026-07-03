@@ -24,7 +24,7 @@ import sys
 from datetime import datetime, timedelta, timezone
 from typing import Mapping
 
-from . import execution_stats, runelite, signals
+from . import execution_stats, ge_tax, runelite, signals
 
 MAX_SLOTS = 8                 # Members GE offer slots
 SURVIVAL_MIN_TRADES = 4       # backtest round-trips required to trust a pattern
@@ -136,6 +136,7 @@ def _buy_row(sig: dict, bt: dict, qty: int, execution_evidence: dict | None = No
     return {
         "id": sig["id"], "name": sig["name"], "action": "buy", "bucket": "flip",
         "qty": qty, "price": sig["buy"], "sell_target": sig["sell"],
+        "live_low": sig.get("current_low"), "live_high": sig.get("current_high"),
         "horizon": "0-12h",
         "reason": (f"live low entry @ {sig['buy']} within {int(signals.BUY_QUANTILE*100)}th-pctile band; "
                    f"6h regime {sig['regime']['level']}; survives 12h reprice-to-clear "
@@ -161,6 +162,8 @@ def _time_buy_row(sig: dict, qty: int) -> dict:
         "qty": qty,
         "price": sig["buy"],
         "sell_target": sig["sell"],
+        "live_low": sig.get("current_low"),
+        "live_high": sig.get("current_high"),
         "horizon": "6-24h",
         "reason": (
             f"UTC pattern {sig['entry_window_utc']} buy → {sig['exit_window_utc']} sell; "
@@ -196,6 +199,8 @@ def _active_buy_row(sig: dict, qty: int, expected_profit: int) -> dict:
         "qty": qty,
         "price": sig["buy"],
         "sell_target": sig["sell"],
+        "live_low": sig.get("current_low"),
+        "live_high": sig.get("current_high"),
         "horizon": "0-90m",
         "reason": (
             f"active margin probe: fresh two-sided prints "
@@ -230,7 +235,7 @@ def _sell_fill_row(offer: dict, triage: dict) -> dict | None:
         raise ValueError(f"cannot price filled buy for resale: {offer}")
     reason = f"sell {qty} filled unit(s) after {triage['verdict']}ing the buy offer"
     if not offer.get("intent_id") and not offer.get("strategy"):
-        reason += " — untracked buy: skip if this was a personal purchase"
+        reason += " — untracked buy, resale will not be strategy-graded"
     return {
         "id": offer["id"],
         "name": triage.get("name") or (market or {}).get("name"),
@@ -240,6 +245,8 @@ def _sell_fill_row(offer: dict, triage: dict) -> dict | None:
         "qty": qty,
         "price": price,
         "sell_target": price,
+        "live_low": (market or {}).get("current_low"),
+        "live_high": (market or {}).get("current_high"),
         "horizon": "0-12h",
         "reason": reason,
         "predicted": {"direction": "up", "target": price, "by": _by_hours()},
@@ -304,6 +311,8 @@ def _action_rows(p: dict) -> list[dict]:
             side=o.get("side"),
             qty=o.get("qty"),
             price=price,
+            live_low=o.get("live_low"),
+            live_high=o.get("live_high"),
             sell_target="",
             deadline="",
             reason=o.get("note"),
@@ -316,6 +325,8 @@ def _action_rows(p: dict) -> list[dict]:
             side="sell",
             qty=b.get("qty"),
             price=b.get("price"),
+            live_low=b.get("live_low"),
+            live_high=b.get("live_high"),
             sell_target=b.get("sell_target"),
             deadline=b.get("predicted", {}).get("by", ""),
             reason=b.get("reason"),
@@ -334,6 +345,8 @@ def _action_rows(p: dict) -> list[dict]:
                 side=b.get("action"),
                 qty=b.get("qty"),
                 price=b.get("price"),
+                live_low=b.get("live_low"),
+                live_high=b.get("live_high"),
                 sell_target=b.get("sell_target"),
                 deadline=b.get("hard_exit_at") or b.get("predicted", {}).get("by", ""),
                 reason=b.get("reason"),
@@ -408,12 +421,14 @@ def _break_even(cost: int) -> int:
 
 def _apply_cost_guard(res: dict, offer: dict, sig: dict | None, cost: int | None,
                       strategy: str | None = None, hard_exit_due: bool = False) -> dict:
-    """Never reprice a sell below break-even just to clear — that converts dead capital
-    into a realized loss on what is usually a thin item. The clamp-to-bid fix is right
-    about *unfillable* asks but blind to what we paid; this layer adds cost awareness.
+    """Loss-minimising layer for sells whose clear price sits below what we paid.
 
-    A below-cost clear is allowed only at the strategy's hard 12h stop. Before then, hold
-    the existing ask and surface the cost-vs-bid gap.
+    The clamp-to-bid fix is right about *unfillable* asks but blind to cost. Before the
+    strategy's hard stop, a below-break-even clear becomes the lowest ask that still
+    recovers cost after tax: an ask above break-even is lowered to it (strictly more
+    fillable, gives up nothing) and one already at/below break-even holds. Each row
+    quantifies the clear-now alternative so the user can choose to book the loss early;
+    at the hard stop the planner books it itself, matching the backtest's forced exit.
     """
     if cost is None or res.get("verdict") != "reprice" or res.get("side") != "sell":
         return res
@@ -433,9 +448,21 @@ def _apply_cost_guard(res: dict, offer: dict, sig: dict | None, cost: int | None
                        f"break-even {be} (cost {cost})")
         return res
     bid = (sig or {}).get("current_high")
-    return {**{k: res[k] for k in res if k != "new_price"}, "verdict": "hold",
-            "note": (f"bid {bid} below break-even {be} (cost {cost}) — holding thin item "
-                     f"for demand, not clearing at a loss")}
+    remaining = max(0, int(_num(offer.get("qty"))) - int(_num(offer.get("filled_qty"))))
+    alt = ""
+    if bid and remaining:
+        proceeds = ge_tax.net_sale_price(res.get("id") or 0, res.get("name") or "", bid) * remaining
+        loss = cost * remaining - proceeds
+        alt = f"; clear now at bid {bid} = -{loss:,}gp realized, frees {proceeds:,}gp"
+    base = {k: res[k] for k in res if k != "new_price"}
+    ask = int(_num(offer.get("price")))
+    if ask > be:
+        return {**base, "verdict": "reprice", "new_price": be, "cost_floor": True,
+                "note": (f"bid {bid} below break-even {be} (cost {cost}) — lower ask to "
+                         f"break-even; below-cost clear waits for the {label}{alt}")}
+    return {**base, "verdict": "hold",
+            "note": (f"bid {bid} below break-even {be} (cost {cost}) — ask already at/below "
+                     f"break-even; below-cost clear waits for the {label}{alt}")}
 
 
 def _enforce_fillable(res: dict, sig: dict | None) -> dict:
@@ -449,6 +476,10 @@ def _enforce_fillable(res: dict, sig: dict | None) -> dict:
     accumulation), so only the sell side is gated here.
     """
     if not sig or res.get("verdict") != "reprice":
+        return res
+    # A cost-floored ask sits above the bid on purpose: it is the lowest price that
+    # still recovers cost, chosen over holding an even higher fantasy ask.
+    if res.get("cost_floor"):
         return res
     bid = _sane_bid(sig)
     new_price = res.get("new_price")
@@ -493,16 +524,22 @@ def _triage_offer(offer: dict, cost_map: dict[int, int] | None = None,
         offer, quote, cost, strategy=strategy, hard_exit_due=hard_exit_due,
     )
     res = _enforce_fillable(res, quote)
-    # No live intent and no strategy tag: manual offer, personal item, or a call whose
-    # intent was already reconciled. The verdict is advisory, not a plan instruction —
-    # collect stays unqualified because collecting is always correct.
+    # No live intent and no strategy tag: origin unknown — a manual offer, a call whose
+    # intent was already reconciled, or one the harness failed to link. The advice applies
+    # either way; the tag only means the outcome will not be strategy-graded. Collect
+    # stays unqualified because collecting is always correct.
     if not offer.get("intent_id") and not strategy and res.get("verdict") != "collect":
         res["untracked"] = True
         note = res.get("note")
         res["note"] = (
-            f"untracked offer — {note} (skip if personal)" if note
-            else "untracked offer (skip if personal)"
+            f"untracked offer — {note}" if note else "untracked offer"
         )
+    # An observation-anchored age is a lower bound, so freshness/staleness reasoning
+    # above may have treated a long-parked offer as young. Say so.
+    if offer.get("age_is_floor") and res.get("verdict") != "collect":
+        res["age_is_floor"] = True
+        res["note"] = (f"{res.get('note') or ''} — age ≥{_num(offer.get('age_hours')):g}h "
+                       f"(first observed then; placement time unknown)").lstrip(" —")
     return res
 
 
@@ -511,6 +548,8 @@ def _decide_triage(offer: dict, sig: dict | None, quote: dict | None,
     market = sig or quote
     base = {"id": offer["id"], "name": (market or {}).get("name"), "side": offer.get("side"),
             "qty": offer.get("qty"), "price": offer.get("price"),
+            "live_low": (market or {}).get("current_low"),
+            "live_high": (market or {}).get("current_high"),
             "age_hours": offer.get("age_hours"), "filled_qty": offer.get("filled_qty"),
             "last_fill_age_hours": offer.get("last_fill_age_hours"),
             "state": offer.get("state")}
@@ -600,6 +639,10 @@ def _decide_triage(offer: dict, sig: dict | None, quote: dict | None,
                     if not unproven_fresh else
                     f"age unknown (plugin lost creation time) — clear at live bid {bid}")
             return {**base, "verdict": "reprice", "new_price": bid, "note": note}
+        if bid and bid < price:
+            return {**base, "verdict": "hold",
+                    "note": (f"no intraday band; ask {price} above live bid {bid} but not "
+                             f"stale yet — clears after {STALE_SELL_HOURS}h without fills")}
         return {**base, "verdict": "hold", "note": "no intraday band; already at/below live bid"}
     regime_high = sig["regime"]["level"] == "high"
     target = sig["buy"] if side == "buy" else sig["sell"]
@@ -1007,6 +1050,8 @@ def plan(cash: int, offers: list[dict] | None = None,
             "qty": qty,
             "price": buy,
             "sell_target": sig["sell"],
+            "live_low": sig.get("current_low"),
+            "live_high": sig.get("current_high"),
             "horizon": "0-12h",
             "reason": (
                 f"experimental patient bid at {sig['buy_band']:,}, "
@@ -1070,8 +1115,8 @@ def _render_md(p: dict) -> str:
         L += [
             "",
             "## Actions",
-            "| action | item | qty | price | sell target | deadline | reason |",
-            "|---|---|---:|---:|---:|---|---|",
+            "| action | item | qty | price | live low | live high | sell target | deadline | reason |",
+            "|---|---|---:|---:|---:|---:|---:|---|---|",
         ]
         for r in rows:
             # Fold the offer side into the action where it isn't implied: new
@@ -1082,6 +1127,7 @@ def _render_md(p: dict) -> str:
             L.append(
                 f"| **{action}** | {_fmt(r['item'])} | "
                 f"{_fmt(r['qty'])} | {_fmt(r['price'])} | "
+                f"{_fmt(r.get('live_low'))} | {_fmt(r.get('live_high'))} | "
                 f"{_fmt(r['sell_target'])} | {_fmt(r['deadline'])} | {_fmt(r['reason'])} |"
             )
     return "\n".join(L)

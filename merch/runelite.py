@@ -294,10 +294,14 @@ def _read_open_offers_from_export() -> list[dict]:
             and _to_int(update.get("id")) == item_id
             and _offer_is_buy(update) == (side == "buy")
         )
+        age_is_floor = None
         if joined and update.get("uuid"):
             open_uuids.add(update["uuid"])
             age_seconds = _resolve_age_seconds(
                 slot, update, timers.get(slot_idx), exported_at, anchors, suspects)
+            # "observed" anchors date from when this harness first saw the offer, not
+            # from placement: the true age is at least this, possibly much more.
+            age_is_floor = anchors[update["uuid"]]["source"] == "observed"
         else:
             # No reliable uuid join (e.g. missing autosave): fall back to the
             # plugin's own age, which may be None.
@@ -338,6 +342,7 @@ def _read_open_offers_from_export() -> list[dict]:
             "note": slot.get("merchNote"),
             "hard_exit_at": slot.get("merchHardExitAt"),
             "age_hours": round(age_seconds / 3600, 2) if age_seconds is not None else None,
+            "age_is_floor": age_is_floor,
             "last_fill_at": last_fill_at,
             "last_fill_age_hours": last_fill_age_hours,
             "state": state,
@@ -536,12 +541,15 @@ def _resolve_age_seconds(slot: dict, offer: dict, timer: dict | None,
     stored = anchors.get(uuid)
 
     candidates = _trusted_placements_ms(slot, offer, timer, exported_ms, suspects)
+    trusted = bool(candidates)
     if stored:
         candidates.append(_to_int(stored.get("anchor_ms")))
 
     if candidates:
         anchor_ms = min(c for c in candidates if c)
-        source = "anchor"
+        # A stored anchor that began life as a first-observation floor stays a floor
+        # until a trusted placement time is ever seen for this uuid.
+        source = "anchor" if trusted or (stored or {}).get("source") == "anchor" else "observed"
     else:
         anchor_ms = exported_ms
         source = "observed"

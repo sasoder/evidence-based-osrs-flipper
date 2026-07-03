@@ -18,7 +18,11 @@ commands and outputs listed below.
 Parse the user's message first — never re-ask anything already stated. Skip straight to step 1
 only when the message supplies liquid gp **and** attendance (lanes and slots may default
 silently). Liquid gp alone is not enough: attendance changes which lanes are safe, so a bare
-"30m, what should I buy" still gets the intake prompt. Collect the missing inputs in one round
+"30m, what should I buy" still gets the intake prompt.
+
+Exception — a pure offer-review request ("what should I do with my offers?", "look at my
+slots") needs no intake at all: run `merch.plan --cash 0 --max-new-slots 0 --markdown` and
+present the triage. Ask for liquid gp only if the user then wants new buys. Collect the missing inputs in one round
 (a single structured multi-question prompt if the engine supports one, otherwise one concise
 message):
 
@@ -97,6 +101,10 @@ the strategy gate.
 - Present the planner markdown unchanged, including its deployment utilization, plus a short
   FU-history note only when you have explicit FU stats to cite. Do not invent
   grading/accountability summaries from repo state.
+- Then interpret it: for each row the user asks about, explain the verdict in plain terms using
+  the row's live low/high, break-even, and quantified alternatives. "Untracked offer" means the
+  outcome won't be strategy-graded — the advice still applies in full; never present an
+  untracked row as "not my problem".
 - `--write-intents` writes the thin pending queue consumed by the FU fork. It contains only
   exact offer signatures plus strategy/reason/prediction tags; FU remains authoritative for
   whether the offer was placed, filled, cancelled, and profitable.
@@ -221,6 +229,10 @@ liquidity, budget, or slot gates.
 - **Never infer cash from snapshots.** Ask the user for current liquid GP and pass it as
   `merch.plan --cash <liquid_gp>` every run. This can intentionally be less than account cash if
   they want to reserve GP outside the harness.
+- When discussing the user's open offers, `merch.prices mapping <id>` and
+  `merch.prices latest <id>` are fair game for those items — name resolution and a current
+  quote are part of giving a real answer, not a dataset dump. The universe-wide scan CLIs
+  remain off-limits during a session.
 - External research is optional in `/flip` because it often adds latency without changing gated
   survivors. Run `uv run python -m merch.research brief` only when the user asks for
   research/catalysts/news or the request is clearly event-driven; the full procedure lives in

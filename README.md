@@ -20,6 +20,10 @@ live in `.agents/skills/`, `.claude/skills/` holds thin pointers to them). Typic
 - **"50m liquid, what should I do?"** It syncs your RuneLite exports, triages every open offer
   (hold, cancel, collect, or reprice), then fills your free slots with new calls and presents one
   action table.
+- **"What should I do with my current offers?"** Triage only — no liquid gp needed. Untracked
+  offers (placed by hand or never linked to a plan) get the same full treatment; a sell sitting
+  underwater is repriced no lower than break-even before its hard stop, with the clear-now loss
+  quantified so you can cut early on purpose.
 - **"Going to bed, 120m."** Overnight mode: drops the strategies that need you at the keyboard
   and sizes positions to a 12-hour window.
 - **"Only active flips, max 5 slots."** Strategy and slot preferences go straight to the planner
@@ -35,15 +39,17 @@ live in `.agents/skills/`, `.claude/skills/` holds thin pointers to them). Typic
 If your message doesn't include the numbers, the agent asks for them: liquid GP, whether you'll
 be around to manage offers, which strategies to run, and a slot cap. A plan looks like this:
 
-| action | item | qty | price | deadline |
-|---|---|---:|---:|---|
-| reprice sell | Ornate maul handle | 12 | 747,005 | |
-| collect | Stymphike feather | 5,000 | 1,789 | |
-| buy | Halibut | 958 | 2,147 | 21:56 UTC |
-| buy | Accursed sceptre (u) | 7 | 6,491,874 | 23:26 UTC |
+| action | item | qty | price | live low | live high | deadline |
+|---|---|---:|---:|---:|---:|---|
+| reprice sell | Ornate maul handle | 12 | 747,005 | 731,212 | 747,005 | |
+| collect | Stymphike feather | 5,000 | 1,789 | | | |
+| buy | Halibut | 958 | 2,147 | 2,147 | 2,290 | 21:56 UTC |
+| buy | Accursed sceptre (u) | 7 | 6,491,874 | 6,491,874 | 6,822,410 | 23:26 UTC |
 
-Every row also carries its reason (for row 4: fresh two-sided prints, 318k/unit net spread after
-tax, 36 buys/35 sells in the last hour, cancel unfilled after 30m, hard exit by 90m).
+Every row shows the item's latest instant-sell/instant-buy prints (live low/high) so you can
+sanity-check the call against your own read of the market, and carries its reason (for row 4:
+fresh two-sided prints, 318k/unit net spread after tax, 36 buys/35 sells in the last hour, cancel
+unfilled after 30m, hard exit by 90m).
 
 ## How it decides
 

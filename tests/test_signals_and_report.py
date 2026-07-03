@@ -767,6 +767,7 @@ class FlipParsingTests(unittest.TestCase):
                 "note": "test note",
                 "hard_exit_at": "2026-06-23T18:00:00Z",
                 "age_hours": 6.5,
+                "age_is_floor": None,
                 "last_fill_at": None,
                 "last_fill_age_hours": None,
                 "state": "ACTIVE",
@@ -783,6 +784,7 @@ class FlipParsingTests(unittest.TestCase):
                 "note": None,
                 "hard_exit_at": None,
                 "age_hours": 7.5,
+                "age_is_floor": None,
                 "last_fill_at": None,
                 "last_fill_age_hours": None,
                 "state": "FILLED",
@@ -1187,6 +1189,19 @@ class OfferAgeAnchorTests(unittest.TestCase):
             (tmp / "flipping" / f"{rsn}.json").write_text(json.dumps(flip))
             offers = self._run(tmp)
         self.assertEqual(offers[0]["age_hours"], 5.0)
+        self.assertFalse(offers[0]["age_is_floor"])
+
+    def test_observation_anchored_age_stays_flagged_as_floor(self) -> None:
+        # No trusted placement evidence: the age counts from when this harness first
+        # saw the offer, so it is a lower bound — and stays one on re-observation,
+        # because the persisted anchor was never better than an observation.
+        with tempfile.TemporaryDirectory() as d:
+            tmp = Path(d)
+            self._write_export(tmp, unknown_time=True)
+            first = self._run(tmp)
+            second = self._run(tmp)
+        self.assertTrue(first[0]["age_is_floor"])
+        self.assertTrue(second[0]["age_is_floor"])
 
 
 class UnknownAgeTriageTests(unittest.TestCase):
@@ -1903,7 +1918,7 @@ class PlanTests(unittest.TestCase):
 
         self.assertIn("## Actions", md)
         self.assertIn(
-            "| action | item | qty | price | sell target | deadline | reason |",
+            "| action | item | qty | price | live low | live high | sell target | deadline | reason |",
             md,
         )
         self.assertNotIn("## Buy", md)
@@ -1977,18 +1992,65 @@ class PlanTests(unittest.TestCase):
         ok = {"id": 1, "side": "sell", "verdict": "reprice", "new_price": 180}
         self.assertEqual(plan._enforce_fillable(ok, sig), ok)
 
-    def test_below_cost_sell_holds_instead_of_clearing_at_a_loss(self) -> None:
+    def test_enforce_fillable_allows_cost_floor_ask_above_bid(self) -> None:
+        # A cost-floored break-even ask sits above the bid on purpose; the guard
+        # must not treat it as the unfillable-ask logic error.
+        sig = {"id": 1, "current_high": 180}
+        floored = {"id": 1, "side": "sell", "verdict": "reprice",
+                   "new_price": 205, "cost_floor": True}
+        self.assertEqual(plan._enforce_fillable(floored, sig), floored)
+
+    def test_triage_rows_carry_live_low_and_high(self) -> None:
+        item = lambda i: {**_sig(i, 100, buy=100, sell=250),
+                          "current_low": 178, "current_high": 180}
+        offers = [{"id": 1, "side": "sell", "qty": 10, "price": 220,
+                   "age_hours": 6, "filled_qty": 0}]
+        p = self._plan([], item=item, offers=offers)
+        row = p["offer_triage"][0]
+        self.assertEqual(row["live_low"], 178)
+        self.assertEqual(row["live_high"], 180)
+        md = plan._render_md(p)
+        self.assertIn("| 178 | 180 |", md)
+
+    def test_floor_age_is_disclosed_in_the_triage_note(self) -> None:
+        item = lambda i: {**_sig(i, 100, buy=100, sell=250), "current_high": 180}
+        offers = [{"id": 1, "side": "sell", "qty": 10, "price": 220,
+                   "age_hours": 0.3, "filled_qty": 0, "age_is_floor": True}]
+        p = self._plan([], item=item, offers=offers)
+        row = p["offer_triage"][0]
+        self.assertTrue(row["age_is_floor"])
+        self.assertIn("age ≥0.3h", row["note"])
+        self.assertIn("placement time unknown", row["note"])
+
+    def test_below_cost_sell_reprices_down_to_break_even_not_the_bid(self) -> None:
         # Live bid (180) is below our cost (200): clearing down to it books a loss.
-        # A fresh thin-item sell must hold, not clear — the keel-parts case.
+        # But holding a 210 ask when 205 recovers cost is a fantasy ask — lower it
+        # to break-even (the cost floor), and quantify the clear-now alternative.
         item = lambda i: {**_sig(i, 100, buy=100, sell=250),
                           "current_high": 180, "trend": {"direction": "flat"}}
         offers = [{"id": 1, "side": "sell", "qty": 10, "price": 210,
                    "age_hours": 1, "filled_qty": 0}]
         p = self._plan([], item=item, offers=offers, cost_map={1: 200})
         row = p["offer_triage"][0]
+        self.assertEqual(row["verdict"], "reprice")
+        self.assertEqual(row["new_price"], 205)  # ceil(200 / 0.98)
+        self.assertTrue(row["cost_floor"])
+        self.assertIn("break-even 205", row["note"])
+        self.assertIn("clear now at bid 180", row["note"])
+
+    def test_below_cost_sell_already_at_break_even_holds(self) -> None:
+        # Ask (205) already sits at the cost floor; there is nothing better to post,
+        # so hold — the clear-now alternative stays quantified in the note.
+        item = lambda i: {**_sig(i, 100, buy=100, sell=250),
+                          "current_high": 180, "trend": {"direction": "flat"}}
+        offers = [{"id": 1, "side": "sell", "qty": 10, "price": 205,
+                   "age_hours": 1, "filled_qty": 0}]
+        p = self._plan([], item=item, offers=offers, cost_map={1: 200})
+        row = p["offer_triage"][0]
         self.assertEqual(row["verdict"], "hold")
         self.assertNotIn("new_price", row)
-        self.assertIn("break-even", row["note"])
+        self.assertIn("break-even 205", row["note"])
+        self.assertIn("clear now at bid 180", row["note"])
 
     def test_below_cost_sell_clears_at_the_hard_12h_stop(self) -> None:
         item = lambda i: {**_sig(i, 100, buy=100, sell=250),
