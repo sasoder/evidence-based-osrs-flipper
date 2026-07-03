@@ -51,6 +51,7 @@ ACTIVE_MAX_EXIT_PROBABILITY = 0.90
 # 30%, so this lane does not promote a pattern merely because it fits the whole sample.
 TIME_OF_DAY_TIMESTEP = "6h"
 TIME_OF_DAY_STEP_HOURS = 6
+TIME_OF_DAY_BUCKETS = 24 // TIME_OF_DAY_STEP_HOURS
 TIME_OF_DAY_MAX_HOLD_STEPS = 4
 TIME_OF_DAY_MIN_TRAIN_TRADES = 40
 TIME_OF_DAY_MIN_TEST_TRADES = 20
@@ -652,7 +653,7 @@ def _time_samples(rows: list[dict], entry_bucket: int, hold_steps: int,
     for i in range(start, min(stop, len(rows) - hold_steps)):
         entry = rows[i]
         exit_row = rows[i + hold_steps]
-        if datetime.fromtimestamp(entry["timestamp"], tz=timezone.utc).hour // 6 != entry_bucket:
+        if datetime.fromtimestamp(entry["timestamp"], tz=timezone.utc).hour // TIME_OF_DAY_STEP_HOURS != entry_bucket:
             continue
         if abs((exit_row["timestamp"] - entry["timestamp"]) - expected_seconds) > 3600:
             continue
@@ -677,6 +678,11 @@ def _time_metrics(samples: list[dict]) -> dict:
         if profits else 0,
         "median_exit_ratio": median(row["ratio"] for row in samples) if samples else None,
     }
+
+
+def _utc_window(bucket: int) -> str:
+    start = bucket * TIME_OF_DAY_STEP_HOURS
+    return f"{start:02d}:00-{start + TIME_OF_DAY_STEP_HOURS:02d}:00"
 
 
 def time_of_day_signal(item_id: int) -> dict | None:
@@ -745,7 +751,7 @@ def time_of_day_signal(item_id: int) -> dict | None:
     if fillable_qty <= 0:
         return None
 
-    exit_bucket = (entry_bucket + hold_steps) % 4
+    exit_bucket = (entry_bucket + hold_steps) % TIME_OF_DAY_BUCKETS
     hold_hours = hold_steps * TIME_OF_DAY_STEP_HOURS
     return {
         "id": item_id,
@@ -757,8 +763,8 @@ def time_of_day_signal(item_id: int) -> dict | None:
         "expected_profit_per_unit": expected_profit,
         "expected_profit": expected_profit * fillable_qty,
         "hold_hours": hold_hours,
-        "entry_window_utc": f"{entry_bucket * 6:02d}:00-{entry_bucket * 6 + 6:02d}:00",
-        "exit_window_utc": f"{exit_bucket * 6:02d}:00-{exit_bucket * 6 + 6:02d}:00",
+        "entry_window_utc": _utc_window(entry_bucket),
+        "exit_window_utc": _utc_window(exit_bucket),
         "train": train,
         "test": test,
         "regime": regime,
