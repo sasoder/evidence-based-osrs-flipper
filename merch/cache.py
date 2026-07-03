@@ -17,10 +17,9 @@ import json
 import time
 from pathlib import Path
 
-from .config import ROOT, load_config
+from .config import ROOT
 
-CONFIG = load_config()
-CACHE_DIR = ROOT / CONFIG.get("cache_dir", "data/cache")
+CACHE_DIR = ROOT / "data/cache"
 
 
 def _path(key: str) -> Path:

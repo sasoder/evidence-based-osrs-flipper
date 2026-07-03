@@ -23,6 +23,7 @@ from datetime import datetime, timezone
 from statistics import median
 
 from . import prices
+from .ge_tax import sale_tax
 
 MAX_LATEST_AGE_MINUTES = 90
 EXECUTION_TIMESTEP = "1h"
@@ -112,7 +113,7 @@ def normalized_entropy(timestamps: list[int], timestep: str) -> float:
 
 
 def tax(sell_price: int) -> int:
-    return min(int(sell_price * 0.02), 5_000_000)
+    return sale_tax(sell_price)
 
 
 def _volume_1h(item_id: int) -> dict:

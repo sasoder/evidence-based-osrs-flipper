@@ -27,11 +27,12 @@ from functools import lru_cache
 
 from . import cache
 from .config import load_config
+from .ge_tax import sale_tax
 
 CONFIG = load_config()
-BASE = CONFIG.get("wiki_api_base", "https://prices.runescape.wiki/api/v1/osrs")
+BASE = "https://prices.runescape.wiki/api/v1/osrs"
 UA = CONFIG["user_agent"]
-TIMEOUT = CONFIG.get("request_timeout_seconds", 20)
+TIMEOUT = 20
 
 # TTLs reflect how often upstream actually changes: the mapping is near-static, while the
 # real-time aggregates refresh on their own period (latest ~continuously, 5m/1h on the bucket).
@@ -147,7 +148,7 @@ def margins(min_volume: int = 0, limit: int | None = 50) -> list[dict]:
         traded = (v.get("highPriceVolume") or 0) + (v.get("lowPriceVolume") or 0)
         if traded < min_volume:
             continue
-        tax = min(int(high * 0.02), 5_000_000)  # GE tax: 2% on sale, 5M cap
+        tax = sale_tax(high)
         margin = high - low - tax
         if margin <= 0:
             continue
