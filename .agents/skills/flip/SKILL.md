@@ -59,8 +59,7 @@ for the planner:
 `[{"slot":0,"id":11212,"side":"sell","qty":11000,"filled_qty":0,"price":3390,"age_hours":6.5,"state":"ACTIVE"}]`.
 Offer age matters: stale sells are measured from their last fill; zero-fill buys older than 4h
 should be cancelled rather than chased. Do not assume what's true since the last run, and never
-size off a stale snapshot. `scripts/preflight.sh` is an optional local health check, not a
-required planning phase.
+size off a stale snapshot.
 
 ### 2. Fast deterministic plan (default)
 
