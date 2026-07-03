@@ -5,9 +5,6 @@ Inputs produced by RuneLite on the trading machine:
   data/incoming/flipping/*.json           — Flipping Utilities autosave files
   data/incoming/ge-slots/*.json           — FU fork current GE slot export
 
-Formats vary slightly by plugin version, so parsing here is deliberately tolerant: we
-look for the columns/keys we need and ignore the rest.
-
 CLI:
     python -m merch.runelite flips       # normalized realized flips
     python -m merch.runelite offers      # non-empty GE slots from FU current-slot export
@@ -57,20 +54,11 @@ def profile_rsn() -> str | None:
     return next(iter(candidates)) if len(candidates) == 1 else None
 
 
-def _first(d: dict, *keys, default=None):
-    for k in keys:
-        for actual in d:
-            if actual.lower().replace(" ", "").replace("_", "") == k:
-                return d[actual]
-    return default
-
-
 def _to_int(x) -> int:
     if x is None:
         return 0
-    s = str(x).replace(",", "").strip()
     try:
-        return int(float(s))
+        return int(float(x))
     except ValueError:
         return 0
 
@@ -107,8 +95,8 @@ def _fifo_lots(record: dict, offers: list[dict]) -> list[dict]:
     FU stores all offers for an item together. Reconciliation needs order-sized lots so a new
     2,000-unit buy is not accidentally graded with an older 270-unit buy in the same item row.
     """
-    iid = _to_int(_first(record, "itemid", "id", default=0))
-    name = _first(record, "itemname", "name", "item", default="?")
+    iid = _to_int(record["id"])
+    name = record["name"]
     from .ge_tax import net_sale_price
 
     lots: list[dict] = []
@@ -350,11 +338,7 @@ def _read_open_offers_from_export() -> list[dict]:
             "intent_id": slot.get("merchIntentId"),
             "strategy": slot.get("merchStrategy"),
             "note": slot.get("merchNote"),
-            "hard_exit_at": (
-                slot.get("merchHardExitAt")
-                or slot.get("hardExitAt")
-                or slot.get("hard_exit_at")
-            ),
+            "hard_exit_at": slot.get("merchHardExitAt"),
             "age_hours": round(age_seconds / 3600, 2) if age_seconds is not None else None,
             "last_fill_at": last_fill_at,
             "last_fill_age_hours": last_fill_age_hours,
@@ -600,7 +584,7 @@ def _last_fill_index() -> dict[tuple[int, str, str], int]:
     for path in _flip_files(flip_dir):
         raw = json.loads(path.read_text())
         for record in raw["trades"]:
-            iid = _to_int(_first(record, "itemid", "id", default=0))
+            iid = _to_int(record["id"])
             for offer in record["h"]["sO"]:
                 uuid = offer.get("uuid")
                 if not uuid:
@@ -630,7 +614,7 @@ def _main(argv: list[str]) -> int:
     try:
         if cmd == "flips":
             out = read_flips()
-        elif cmd in ("offers", "open-offers"):
+        elif cmd == "offers":
             out = read_open_offers()
         else:
             print(__doc__)

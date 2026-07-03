@@ -51,7 +51,7 @@ HISTORY_WORKERS = 24
 _TS_MEMO: dict[tuple[int, str], list[dict]] = {}
 
 
-def _get(path: str, params: dict | None = None, ttl: float = 0) -> dict:
+def _get(path: str, params: dict | None = None, *, ttl: float) -> dict:
     url = f"{BASE}{path}"
     if params:
         query = "&".join(f"{k}={v}" for k, v in params.items() if v is not None)
@@ -82,12 +82,12 @@ def mapping_by_id() -> dict[int, dict]:
     return {m["id"]: m for m in mapping()}
 
 
-def five_min(timestamp: int | None = None) -> dict:
-    return _get("/5m", {"timestamp": timestamp} if timestamp else None, ttl=TTL_REALTIME)["data"]
+def five_min() -> dict:
+    return _get("/5m", ttl=TTL_REALTIME)["data"]
 
 
-def one_hour(timestamp: int | None = None) -> dict:
-    return _get("/1h", {"timestamp": timestamp} if timestamp else None, ttl=TTL_REALTIME)["data"]
+def one_hour() -> dict:
+    return _get("/1h", ttl=TTL_REALTIME)["data"]
 
 
 def _fetch_timeseries(item_id: int, timestep: str) -> list[dict]:
@@ -125,11 +125,11 @@ def timeseries(item_id: int, timestep: str) -> list[dict]:
     return rows
 
 
-def margins(min_volume: int = 0, limit: int | None = 50,
-            members_only: bool = True) -> list[dict]:
+def margins(min_volume: int = 0, limit: int | None = 50) -> list[dict]:
     """Naive margin scan: spread between instant-buy (high) and instant-sell (low),
     enriched with 1h volume and GE buy limit. A starting point for the agent to reason
     over — NOT a buy signal on its own. Tax (2% on sells, capped) is applied.
+    Members-only items: F2P items are noise on a members account.
     """
     data = latest()
     vol = one_hour()
@@ -138,9 +138,7 @@ def margins(min_volume: int = 0, limit: int | None = 50,
     for sid, p in data.items():
         iid = int(sid)
         m = meta.get(iid)
-        if not m:
-            continue
-        if members_only and not m.get("members"):
+        if not m or not m.get("members"):
             continue
         high, low = p.get("high"), p.get("low")
         if not high or not low or high <= low:
