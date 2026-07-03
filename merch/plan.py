@@ -103,15 +103,9 @@ def _survival(item_id: int) -> dict | None:
     return None
 
 
-def _by_hours(hours: int = signals.MAX_HOLD_HOURS) -> str:
+def _by_hours(hours: float = signals.MAX_HOLD_HOURS) -> str:
     return (
         datetime.now(timezone.utc) + timedelta(hours=hours)
-    ).isoformat(timespec="minutes")
-
-
-def _active_by_time() -> str:
-    return (
-        datetime.now(timezone.utc) + timedelta(minutes=ACTIVE_HORIZON_MINUTES)
     ).isoformat(timespec="minutes")
 
 
@@ -216,7 +210,7 @@ def _active_buy_row(sig: dict, qty: int, expected_profit: int) -> dict:
         "predicted": {
             "direction": "up",
             "target": sig["sell"],
-            "by": _active_by_time(),
+            "by": _by_hours(ACTIVE_HORIZON_MINUTES / 60),
         },
         "confidence": 0.45 if sig.get("short_drift_pct") is None else 0.55,
         "strategy": "active-margin",
@@ -730,7 +724,6 @@ def plan(cash: int, offers: list[dict] | None = None,
     avoid = {a["id"] for a in overlay.get("avoid", [])}
 
     liquid = cash
-    budget = liquid
     fill_window_hours = (
         OVERNIGHT_FILL_WINDOW_HOURS if horizon == "overnight" else signals.FILL_WINDOW_HOURS
     )
@@ -742,10 +735,10 @@ def plan(cash: int, offers: list[dict] | None = None,
     profit_floor = int(liquid * MIN_FLIP_PROFIT_PCT)
 
     offer_triage = [_triage_offer(o, cost_map, strategy_by_item) for o in offers]
-    projection = _project_after_triage(offers, offer_triage, budget)
+    projection = _project_after_triage(offers, offer_triage, liquid)
     out: dict = {
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        "inputs": {"liquid_gp": liquid, "budget_gp": budget,
+        "inputs": {"liquid_gp": liquid,
                    "open_offers": len(offers),
                    "profit_floor_gp": profit_floor,
                    "horizon": horizon,
@@ -1047,7 +1040,7 @@ def plan(cash: int, offers: list[dict] | None = None,
     planned_buy_gp = sum(b["qty"] * b["price"] for b in planned_buys)
     deployed = projection["locked_buy_gp"] + planned_buy_gp
     utilization = deployed / liquid if liquid else 0
-    unspent = max(0, budget - deployed)
+    unspent = max(0, liquid - deployed)
     out["deployment"] = {
         "planned_gp": deployed,
         "planned_buy_gp": planned_buy_gp,

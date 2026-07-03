@@ -72,12 +72,12 @@ def _err(source: str, exc: Exception, **extra) -> dict:
     return {"source": source, "ok": False, "error": detail, **extra}
 
 
-DEFAULT_NEWS_RSS = "https://secure.runescape.com/m=news/latest_news.rss?oldschool=1"
+NEWS_RSS = "https://secure.runescape.com/m=news/latest_news.rss?oldschool=1"
 
 
 def news(limit: int = 10) -> dict:
     """Official OSRS news/patch-notes RSS — the highest-signal catalyst feed."""
-    url = RESEARCH.get("news_rss", DEFAULT_NEWS_RSS)
+    url = NEWS_RSS
     try:
         root = ET.fromstring(_fetch(url))
         items = []

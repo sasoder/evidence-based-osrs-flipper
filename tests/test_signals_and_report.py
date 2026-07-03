@@ -2057,7 +2057,7 @@ class PlanTests(unittest.TestCase):
             _sig(1, 100, buy=100, fillable=20_000, ge_limit=20_000),
         ])
 
-        self.assertEqual(p["inputs"]["budget_gp"], 1_000_000)
+        self.assertEqual(p["inputs"]["liquid_gp"], 1_000_000)
         self.assertEqual(p["buys"][0]["qty"], 10_000)
         self.assertEqual(p["deployment"]["planned_gp"], 1_000_000)
         self.assertEqual(p["deployment"]["utilization_pct"], 100.0)

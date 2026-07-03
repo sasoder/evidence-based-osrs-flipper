@@ -31,13 +31,7 @@ def sale_tax(gross_price: int) -> int:
     return min(int(gross_price * 0.02), GE_TAX_CAP)
 
 
-def tax_per_item(item_id: int, name: str, gross_price: int) -> int:
-    if gross_price <= 0:
-        return 0
-    if item_id in TAX_EXEMPT_IDS or name.lower() in TAX_EXEMPT_NAMES:
-        return 0
-    return sale_tax(gross_price)
-
-
 def net_sale_price(item_id: int, name: str, gross_price: int) -> int:
-    return gross_price - tax_per_item(item_id, name, gross_price)
+    if item_id in TAX_EXEMPT_IDS or name.lower() in TAX_EXEMPT_NAMES:
+        return gross_price
+    return gross_price - sale_tax(gross_price)
