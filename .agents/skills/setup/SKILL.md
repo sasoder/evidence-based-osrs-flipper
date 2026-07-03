@@ -48,9 +48,6 @@ which also serves as the fallback when no settings.json exists). Format the user
 `osrs-ge-merchanting-harness/0.1 (contact: <answer>)`. If the user skips every question, write
 nothing — the defaults work.
 
-Reddit OAuth credentials for the research overlay are optional and rarely obtainable (Reddit
-locked new script apps); only if the user has them, point at `config/settings.local.json.example`.
-
 ### 4. Done
 
 Suggest a first run: "50m liquid, what should I buy?" (the `flip` skill takes it from there).

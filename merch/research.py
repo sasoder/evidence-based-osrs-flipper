@@ -15,13 +15,10 @@ Network use mirrors merch.prices: urllib with the configured descriptive User-Ag
 UAs like python-urllib get blocked/ratelimited by both the Wiki and Reddit), and a hard
 timeout. No caching — this runs ~once per session and freshness is the whole point.
 
-Reddit: the primary path is the public **/.rss** feed read with a browser User-Agent. The
-descriptive wiki UA and the /hot.rss path both 403; the plain /.rss path + browser UA serves
-fine at our once-per-session rate. (OAuth would be nicer, but Reddit locked new "script" app
-creation to existing developers in late 2025 — new accounts get denied — so OAuth is only used
-if credentials happen to already exist in config.research.reddit_oauth or REDDIT_CLIENT_ID/
-SECRET.) `research.subreddit` may be one name or a list; results are merged. RSS omits
-score/comments — titles are the catalyst signal, which is all this gather needs.
+Reddit: read via the public **/.rss** feed with a browser User-Agent. The descriptive wiki UA
+and the /hot.rss path both 403; the plain /.rss path + browser UA serves fine at our
+once-per-session rate. `research.subreddit` may be one name or a list; results are merged.
+RSS omits score/comments — titles are the catalyst signal, which is all this gather needs.
 
 CLI:
     python -m merch.research brief      # compact digest across all sources
@@ -32,28 +29,18 @@ CLI:
 from __future__ import annotations
 
 import argparse
-import base64
 import json
-import os
 import re
 import sys
 import time
 import urllib.error
-import urllib.parse
 import urllib.request
 from datetime import datetime, timezone
 from xml.etree import ElementTree as ET
 
-from .config import ROOT, load_config
+from .config import load_config
 
 CONFIG = load_config()
-_LOCAL = ROOT / "config" / "settings.local.json"
-if _LOCAL.exists():  # gitignored overrides (secrets, e.g. reddit_oauth) — deep-merge one level
-    for _k, _v in json.loads(_LOCAL.read_text()).items():
-        if isinstance(_v, dict) and isinstance(CONFIG.get(_k), dict):
-            CONFIG[_k] = {**CONFIG[_k], **_v}
-        else:
-            CONFIG[_k] = _v
 UA = CONFIG["user_agent"]
 TIMEOUT = CONFIG.get("request_timeout_seconds", 20)
 RESEARCH = CONFIG.get("research", {})
@@ -138,66 +125,13 @@ def _reddit_via_rss(sub: str, limit: int) -> list[dict]:
     return items
 
 
-def _reddit_creds() -> tuple[str, str]:
-    """Client id/secret from env (wins) or config.research.reddit_oauth. Empty if unconfigured."""
-    oauth = RESEARCH.get("reddit_oauth", {})
-    cid = (os.environ.get("REDDIT_CLIENT_ID") or oauth.get("client_id") or "").strip()
-    secret = (os.environ.get("REDDIT_CLIENT_SECRET") or oauth.get("client_secret") or "").strip()
-    return cid, secret
-
-
-def _reddit_token(cid: str, secret: str) -> str:
-    """App-only client_credentials token — no user context, enough to read public listings."""
-    auth = base64.b64encode(f"{cid}:{secret}".encode()).decode()
-    data = urllib.parse.urlencode({"grant_type": "client_credentials"}).encode()
-    req = urllib.request.Request(
-        "https://www.reddit.com/api/v1/access_token",
-        data=data,
-        headers={"Authorization": f"Basic {auth}", "User-Agent": UA},
-    )
-    with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
-        token = json.loads(resp.read()).get("access_token")
-    if not token:
-        raise RuntimeError("reddit token response had no access_token")
-    return token
-
-
-def _reddit_via_oauth(sub: str, limit: int, token: str) -> list[dict]:
-    """r/<sub> hot posts via oauth.reddit.com (authenticated, real quota)."""
-    url = f"https://oauth.reddit.com/r/{sub}/hot?limit={limit}&raw_json=1"
-    req = urllib.request.Request(url, headers={"Authorization": f"bearer {token}", "User-Agent": UA})
-    with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
-        data = json.loads(resp.read())
-    items = []
-    for child in data.get("data", {}).get("children", []):
-        d = child.get("data", {})
-        created = d.get("created_utc")
-        items.append({
-            "title": _clean(d.get("title", ""), 160),
-            "published": datetime.fromtimestamp(created, timezone.utc).isoformat(timespec="seconds") if created else "",
-            "url": ("https://www.reddit.com" + d["permalink"]) if d.get("permalink") else None,
-        })
-        if len(items) >= limit:
-            break
-    return items
-
-
 def reddit(limit: int | None = None) -> dict:
-    """Hot posts across the configured subreddit(s). RSS is the working path (OAuth app creation
-    is locked to new Reddit accounts as of late 2025); if credentials happen to exist they're used
-    instead. `research.subreddit` may be a single name or a list — items are merged and tagged with
+    """Hot posts across the configured subreddit(s), via the public RSS feeds.
+    `research.subreddit` may be a single name or a list — items are merged and tagged with
     their `subreddit`. A failure surfaces as a citable error rather than a silent drop."""
     subs = RESEARCH.get("subreddit", "2007scape")
     subs = [subs] if isinstance(subs, str) else list(subs)
     limit = limit or RESEARCH.get("reddit_limit", 12)
-
-    cid, secret = _reddit_creds()
-    token, via = None, "rss"
-    if cid and secret:
-        try:
-            token, via = _reddit_token(cid, secret), "oauth"
-        except Exception:  # noqa: BLE001 - creds present but token failed; use RSS
-            token = None
 
     items, errors = [], []
     for i, sub in enumerate(subs):
@@ -205,7 +139,7 @@ def reddit(limit: int | None = None) -> dict:
             time.sleep(REDDIT_REQUEST_DELAY)  # space requests so we don't trip Reddit's rate limit
         for attempt in range(2):
             try:
-                sub_items = _reddit_via_oauth(sub, limit, token) if token else _reddit_via_rss(sub, limit)
+                sub_items = _reddit_via_rss(sub, limit)
                 for it in sub_items:
                     it["subreddit"] = sub
                 items.extend(sub_items)
@@ -221,9 +155,9 @@ def reddit(limit: int | None = None) -> dict:
                 break
 
     if not items and errors:
-        return {"source": "reddit", "ok": False, "via": via,
+        return {"source": "reddit", "ok": False,
                 "subreddits": subs, "error": "; ".join(errors)}
-    out = {"source": "reddit", "ok": True, "via": via, "items": items}
+    out = {"source": "reddit", "ok": True, "items": items}
     if errors:
         out["partial_errors"] = errors
     out["subreddit" if len(subs) == 1 else "subreddits"] = subs[0] if len(subs) == 1 else subs

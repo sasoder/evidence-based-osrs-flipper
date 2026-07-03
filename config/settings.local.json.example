@@ -1,9 +1,0 @@
-{
-  "_note": "Copy to settings.local.json (gitignored) and fill in. Deep-merges over settings.json. Env vars REDDIT_CLIENT_ID / REDDIT_CLIENT_SECRET override these. Get creds at https://www.reddit.com/prefs/apps → 'create app' → type 'script'.",
-  "research": {
-    "reddit_oauth": {
-      "client_id": "",
-      "client_secret": ""
-    }
-  }
-}
