@@ -14,8 +14,8 @@ Inspired by Leverage In Action's
 
 ## What you can do with it
 
-You use it through any coding agent that supports Agent Skills (the `flip` skill lives in
-`.agents/skills/`, `.claude/skills/` holds a thin pointer to it). Typical requests:
+You use it through any coding agent that supports Agent Skills (the `flip` and `setup` skills
+live in `.agents/skills/`, `.claude/skills/` holds thin pointers to them). Typical requests:
 
 - **"50m liquid, what should I do?"** It syncs your RuneLite exports, triages every open offer
   (hold, cancel, collect, or reprice), then fills your free slots with new calls and presents one
@@ -91,10 +91,11 @@ cd evidence-based-flipping
 uv sync
 ```
 
-Then ask your agent to set things up — the `setup` skill verifies the plugin wiring and asks for
-the two things defaults can't infer: a contact for the OSRS Wiki user-agent, and your `rsn` if
-you have more than one RuneLite profile. (Both live in gitignored `config/settings.json`; with a
-single profile and no config, everything is auto-detected.)
+Then ask your agent to set things up — the `setup` skill verifies the plugin wiring and asks
+only for what defaults can't infer: a contact for the OSRS Wiki user-agent, your `rsn` if you
+have more than one RuneLite profile, and which subreddits the optional research pass should
+read. (Answers land in gitignored `config/settings.json`; with a single profile and default
+picks, no config is needed at all.)
 
 ### RuneLite plugin
 
