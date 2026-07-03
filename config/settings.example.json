@@ -1,5 +1,4 @@
 {
-  "account_type": "members",
   "rsn": "",
   "user_agent": "osrs-ge-merchanting-harness/0.1 (contact: replace-me)",
   "wiki_api_base": "https://prices.runescape.wiki/api/v1/osrs",
@@ -7,7 +6,6 @@
   "request_timeout_seconds": 20,
   "incoming_dir": "data/incoming",
   "cache_dir": "data/cache",
-  "reports_dir": "reports",
   "research": {
     "news_rss": "https://secure.runescape.com/m=news/latest_news.rss?oldschool=1",
     "subreddit": ["2007scape", "OSRSflipping"],

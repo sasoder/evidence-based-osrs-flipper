@@ -248,26 +248,6 @@ def read_open_offers() -> list[dict]:
     return _read_open_offers_from_export()
 
 
-def _export_freshness() -> datetime | None:
-    """exportedAt of the GE-slots export, or None if missing/unparseable/stale."""
-    path = _ge_slots_file()
-    if not path:
-        return None
-    try:
-        exported_at = _parse_iso(json.loads(path.read_text()).get("exportedAt"))
-    except (ValueError, OSError):
-        return None
-    if not exported_at or _snapshot_too_old(exported_at):
-        return None
-    return exported_at
-
-
-def _snapshot_too_old(stamp: datetime) -> bool:
-    stale_minutes = CONFIG.get("offer_snapshot_stale_minutes", 5)
-    age = datetime.now(timezone.utc) - stamp.astimezone(timezone.utc)
-    return age.total_seconds() > stale_minutes * 60
-
-
 def _read_open_offers_from_export() -> list[dict]:
     """Read FU's current-slot JSON export into merch.plan's open-offer shape.
 
@@ -579,7 +559,7 @@ def _resolve_age_seconds(slot: dict, offer: dict, timer: dict | None,
 
     if candidates:
         anchor_ms = min(c for c in candidates if c)
-        source = "anchor" if (stored or len(candidates) > 0) else "observed"
+        source = "anchor"
     else:
         anchor_ms = exported_ms
         source = "observed"

@@ -13,7 +13,7 @@ import os
 import sys
 from pathlib import Path
 
-from .runelite import CONFIG, profile_rsn
+from .runelite import profile_rsn
 
 PLAN_SECTIONS = ("sell_fills", "buys", "patient_probes", "active_buys", "time_buys")
 

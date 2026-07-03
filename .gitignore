@@ -9,7 +9,6 @@ __pycache__/
 data/cache/
 
 # RuneLite runtime snapshots are local inputs, never committed
-data/incoming/bank-memory/
 data/incoming/flipping/
 data/incoming/ge-slots/
 
@@ -20,7 +19,6 @@ config/settings.local.json
 # runtime state lives on this machine, not in the repo
 state/
 reports/*.md
-journal/
 overlay.json
 
 # engine-local files
