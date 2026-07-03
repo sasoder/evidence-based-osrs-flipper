@@ -88,11 +88,13 @@ Requires Git and `uv`.
 ```bash
 git clone git@github.com:sasoder/evidence-based-flipping.git
 cd evidence-based-flipping
-scripts/setup.sh
+uv sync
 ```
 
-That installs Python dependencies and creates a gitignored `config/settings.json`. If you have
-multiple RuneLite profiles, set `rsn` there so the advisor knows which one to read.
+Then ask your agent to set things up — the `setup` skill verifies the plugin wiring and asks for
+the two things defaults can't infer: a contact for the OSRS Wiki user-agent, and your `rsn` if
+you have more than one RuneLite profile. (Both live in gitignored `config/settings.json`; with a
+single profile and no config, everything is auto-detected.)
 
 ### RuneLite plugin
 
