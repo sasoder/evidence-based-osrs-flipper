@@ -175,9 +175,8 @@ def read_offer_history() -> list[dict]:
     """
     flip_dir = INCOMING / "flipping"
     out: list[dict] = []
-    if not flip_dir.exists():
-        return out
-    for path in _flip_files(flip_dir):
+    path = _flip_file(flip_dir) if flip_dir.exists() else None
+    if path:
         raw = json.loads(path.read_text())
         records = raw["trades"]
         for record in records:
@@ -217,9 +216,8 @@ def read_flips() -> list[dict]:
     """
     flip_dir = INCOMING / "flipping"
     out: list[dict] = []
-    if not flip_dir.exists():
-        return out
-    for path in _flip_files(flip_dir):
+    path = _flip_file(flip_dir) if flip_dir.exists() else None
+    if path:
         raw = json.loads(path.read_text())
         for record in raw["trades"]:
             out.extend(_fifo_lots(record, record["h"]["sO"]))
@@ -451,10 +449,10 @@ def _resolve_fill_ms(uuid: str, filled_qty: int, exported_ms: int,
 
 
 def _current_slot_timers() -> dict[int, dict]:
-    files = _flip_files(INCOMING / "flipping")
-    if not files:
+    path = _flip_file(INCOMING / "flipping")
+    if not path:
         return {}
-    raw = json.loads(files[0].read_text())
+    raw = json.loads(path.read_text())
     return {_to_int(t.get("slotIndex")): t for t in (raw.get("slotTimers") or [])}
 
 
@@ -560,12 +558,12 @@ def _resolve_age_seconds(slot: dict, offer: dict, timer: dict | None,
     return max(0, (exported_ms - anchor_ms) / 1000)
 
 
-def _flip_files(flip_dir: Path) -> list[Path]:
+def _flip_file(flip_dir: Path) -> Path | None:
     rsn = profile_rsn()
     if not rsn:
         raise ValueError("set config/settings.json rsn or keep exactly one Flipping Utilities export")
     profile = flip_dir / f"{rsn}.json"
-    return [profile] if profile.exists() else []
+    return profile if profile.exists() else None
 
 
 def _last_fill_index() -> dict[tuple[int, str, str], int]:
@@ -579,9 +577,8 @@ def _last_fill_index() -> dict[tuple[int, str, str], int]:
     """
     flip_dir = INCOMING / "flipping"
     index: dict[tuple[int, str, str], int] = {}
-    if not flip_dir.exists():
-        return index
-    for path in _flip_files(flip_dir):
+    path = _flip_file(flip_dir) if flip_dir.exists() else None
+    if path:
         raw = json.loads(path.read_text())
         for record in raw["trades"]:
             iid = _to_int(record["id"])
@@ -602,10 +599,10 @@ def _last_fill_index() -> dict[tuple[int, str, str], int]:
 
 
 def _current_offer_updates() -> dict[int, dict]:
-    files = _flip_files(INCOMING / "flipping")
-    if not files:
+    path = _flip_file(INCOMING / "flipping")
+    if not path:
         return {}
-    raw = json.loads(files[0].read_text())
+    raw = json.loads(path.read_text())
     return {int(slot): offer for slot, offer in raw["lastOffers"].items()}
 
 
