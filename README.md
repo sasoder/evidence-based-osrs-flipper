@@ -8,13 +8,8 @@ never touches the game: you place every offer yourself.
   <img src="images/demo.gif" alt="Asking the agent for a flip plan and getting back an action table" width="700">
 </p>
 
-Every call records a reason and a falsifiable prediction (direction, target, deadline), and
-later runs grade those predictions against what actually filled. A week of following the calls
-on roughly 85m liquid returned about 16m:
-
-<p align="center">
-  <img src="images/profit-week.png" alt="Flipping Utilities weekly profit graph" height="220">
-</p>
+Every call records a reason and a prediction (direction, target, deadline), and later runs
+check those predictions against what actually filled.
 
 Inspired by Leverage In Action's
 ["I Tried Using Data Science to Profit in a Video Game Economy"](https://www.youtube.com/watch?v=FhTLApOoWX8).
@@ -52,17 +47,17 @@ Then just talk to it: *"50m liquid, what should I buy?"*
 
 Typical requests, in plain chat:
 
-- **"50m liquid, what should I do?"** — syncs your exports, triages every open offer (hold,
+- **"50m liquid, what should I do?"** — syncs your exports, checks every open offer (hold,
   cancel, collect, or reprice), then fills your free slots and presents one action table.
-- **"What should I do with my current offers?"** — triage only, no liquid gp needed. Untracked
-  offers get the same full treatment; an underwater sell reprices no lower than break-even
-  before its hard stop, with the clear-now loss quantified so you can cut early on purpose.
+- **"What should I do with my current offers?"** — open offers only, no liquid gp needed. Offers
+  the planner did not place still get checked; a losing sell will not be repriced below
+  break-even before its exit deadline, and it shows the loss if you want to sell now.
 - **"Going to bed, 120m."** — overnight mode: drops the strategies that need you at the
   keyboard and sizes positions to a 12-hour window.
 - **"Only active flips, max 5 slots."** — preferences go straight to the planner as hard
-  constraints.
+  limits.
 - **"Anything being talked about that's worth flipping?"** — optional research pass over the
-  OSRS news feed and Reddit. It can re-rank what already passed the gates, never invent a trade.
+  OSRS news feed and Reddit. It can re-rank trades that already passed, never invent a trade.
 
 If your message doesn't include the numbers, the agent asks: liquid GP, whether you'll be
 around, which strategies, slot cap. A plan looks like this:
@@ -74,53 +69,52 @@ around, which strategies, slot cap. A plan looks like this:
 | buy | Halibut | 958 | 2,147 | 2,147 | 2,290 | 21:56 UTC |
 | buy | Accursed sceptre (u) | 7 | 6,491,874 | 6,491,874 | 6,822,410 | 23:26 UTC |
 
-Every row shows the item's latest instant-sell/instant-buy prints (live low/high) so you can
-sanity-check the call, and carries its reason — for row 4: fresh two-sided prints, 318k/unit
-net spread after tax, 36 buys/35 sells in the last hour, cancel unfilled after 30m, hard exit
-by 90m.
+Every row shows the item's latest instant-sell/instant-buy prices (live low/high) so you can
+check the call, and includes its reason — for row 4: fresh prices on both sides, 318k/unit
+net spread after tax, 36 buys/35 sells in the last hour, cancel unfilled after 30m, exit by 90m.
 
 ## How it decides
 
-The LLM does not pick trades. A deterministic planner (`merch.plan`) does the ranking, sizing,
-triage, and formatting; the agent collects your inputs, runs it once, and reads the result back.
+The LLM does not pick trades. The planner (`merch.plan`) does the ranking, sizing, open-offer
+checks, and formatting; the agent collects your inputs, runs it once, and reads the result back.
 
 Buy and sell targets come from percentile bands over ~15 days of hourly prices (buy at the 35th
 percentile of instant-sells, sell at the 75th of instant-buys), and every margin is after GE
-tax. Open offers are triaged before anything new is suggested: zero-fill buys cancel after 4h,
-stale sells walk toward the live bid, and the 12h forced exit gets booked even at a loss —
-the backtest books the same exit, so holding past it would be grading dishonestly.
+tax. Open offers are checked before anything new is suggested: zero-fill buys cancel after 4h,
+old sells move toward the live bid, and the 12h exit is counted even at a loss. The backtest
+uses the same exit rule, so the live plan should too.
 
-Each lane has its own entry gates:
+Each strategy has its own checks:
 
-| lane | horizon | must pass |
+| strategy | horizon | must pass |
 |---|---|---|
-| **patient** | 2-12h band flips | trading at the band's buy target *now*; 6h regime guard against downtrends (a fat paper margin usually means a downtrend, not oscillation); net positive when the band's rules are replayed over history |
+| **patient** | 2-12h band flips | trading at the band's buy target *now*; 6h trend check against downtrends (a big margin often means the item is dropping, not bouncing); net positive when the band's rules are replayed over history |
 | **active** | 15-90m, items over 1m | fresh two-sided quotes, after-tax margin and ROI floors, real flow on both sides; reports its expected loss if the spread doesn't close |
-| **time** | recurring UTC windows | selected on older data, then still profitable on a newer holdout window it has never seen |
+| **time** | recurring UTC windows | picked on older data, then still profitable on newer data it has not seen |
 | **probe** | small near-band experiments | capped at 5% of liquid in total |
 
-Survivors compete for free slots by expected realized gp/hour, not paper margin: a fat spread
-that fills once a day loses to a thin one that turns over. Quantity is capped by the GE limit
-and estimated fillability, each slot must clear a profit floor, and when gates leave liquid
-unspent the plan names the blocking constraint instead of filling slots with weak trades.
+Items compete for free slots by expected realized gp/hour, not listed margin: a big spread that
+fills once a day loses to a smaller spread that actually moves. Quantity is capped by the GE
+limit and estimated fillability, each slot must clear a profit floor, and when the filters leave
+liquid unspent the plan says why instead of filling slots for the sake of it.
 
 Each call is written as an intent (item, side, quantity, price, strategy, reason, prediction).
 Place that exact offer and the plugin fork tags it; later runs grade the call against your real
-fills. Five profitable round trips make an item a personal staple, which raises sizing
-confidence but never bypasses a gate.
+fills. Five profitable round trips make an item a personal staple, so the planner is willing to
+size it a bit higher, but it still has to pass the same checks.
 
 ## CLI
 
 The planner is a plain CLI underneath, if you want a plan without the agent:
 
 ```bash
-uv run python -m merch.plan --cash 50000000 --lanes active --max-new-slots 5 --write-intents --markdown
+uv run python -m merch.plan --cash 50000000 --strategies active --max-new-slots 5 --write-intents --markdown
 ```
 
 - `--cash <gp>`: liquid GP to size against. Required.
-- `--lanes patient,active,time,probe`: enabled lanes, or presets like `balanced` and `conservative`.
-- `--max-new-slots <n>`: cap new offers after open-offer triage.
-- `--horizon overnight`: drop keyboard-dependent lanes and size for 12h away.
+- `--strategies patient,active,time,probe`: enabled strategies, or presets like `balanced` and `conservative`.
+- `--max-new-slots <n>`: cap new offers after checking current offers.
+- `--horizon overnight`: drop keyboard-dependent strategies and size for 12h away.
 - `--write-intents`: queue exact offer signatures for the plugin fork to tag.
 
 ## Runtime data
@@ -132,14 +126,16 @@ Your exports and local state stay on disk and out of git:
 ## Why "Evidence"?
 
 Evidence is my RSN, and the suggestions are evidence-based, so the name was sitting right
-there. The 16m week up top would look more impressive if I wasn't poor.
+there. A week of following the calls on roughly 85m liquid returned about 16m, which would
+look more impressive if I wasn't poor:
 
 <p align="center">
+  <img src="images/profit-week.png" alt="Flipping Utilities weekly profit graph showing about 16m profit" height="220">
   <img src="images/evidence.png" alt="The RSN Evidence in-game" height="220">
 </p>
 
 ## Tests
 
 ```bash
-scripts/test.sh
+uv run python -m unittest discover -s tests -v
 ```
