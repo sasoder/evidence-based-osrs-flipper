@@ -119,10 +119,6 @@ research digest plus the candidate names. Boost only re-ranks gate survivors; av
 Research never creates an otherwise ineligible trade.
 During `/flip`, do not run separate scan/backtest CLIs or repeatedly rerun `merch.plan` to inspect
 sections; the final markdown action table is the executable contract.
-If the user says overnight or going to bed, run the planner with
-`--horizon overnight` before sizing or writing intents; if they say they'll be away for some
-hours, pass `--away-hours`. Do not hand-filter short-horizon rows after the fact — a plan whose
-rows the user cannot execute is a wrong planner invocation, not a presentation problem.
 
 ## State model
 
@@ -211,10 +207,6 @@ liquidity, budget, or slot gates.
   liquid, cancel zero-fill buys after 6h, and hard-exit by 24h. Report and grade them separately.
 - Active-margin probes use a 15-90 minute horizon and cancel zero-fill buys after 30 minutes.
   Quantity is capped by the GE limit, available liquid gp, and explicit slot constraints.
-- Overnight plans exclude active-margin probes before sizing and intent writing. Use the 12h fill
-  window and a wider deterministic patient/time-of-day seed pool. The planner always supplements
-  margin seeds with the account's best FU round-trip items, but still must not weaken gates merely
-  to deploy cash.
 - Never spend beyond the manually reported liquid gp; never invent low-quality trades to fill
   slots. If the planner uses fewer offers than requested, state the blocking constraint and next
   step (wait, reduce liquid GP, or accept fewer/lower-confidence slots).
