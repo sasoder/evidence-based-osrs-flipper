@@ -39,9 +39,12 @@ Ask in one round (a single structured multi-question prompt if the engine suppor
   clients be identifiable; the shipped placeholder works but is impolite to leave.
 - **RSN**: ask only if `data/incoming` shows zero or multiple Flipping Utilities profiles — a
   single profile is auto-detected and needs no config.
-- **Research subreddits** (multi-select): which subreddits the optional research overlay reads,
-  defaulting to `2007scape` + `OSRSflipping` (both pre-selected); custom subs welcome. Write
-  `research.subreddit` only when the selection differs from the defaults.
+- **Research subreddits** (multi-select): which subreddits the optional research overlay reads.
+  Offer exactly these options: `2007scape` (pre-selected), `OSRSflipping` (pre-selected),
+  `GrandExchange` — plus the engine's built-in "Other" for custom subs. Do not invent additional
+  options (no "None"/"Skip" entry: the overlay is optional and rarely invoked, so an empty
+  selection needs no dedicated option). Write `research.subreddit` only when the selection
+  differs from the defaults.
 
 Write the answers to gitignored `config/settings.json` (shape in `config/settings.example.json`,
 which also serves as the fallback when no settings.json exists). Format the user-agent as
