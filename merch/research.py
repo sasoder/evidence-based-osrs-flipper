@@ -42,8 +42,9 @@ from .config import load_config
 
 CONFIG = load_config()
 UA = CONFIG["user_agent"]
-TIMEOUT = CONFIG.get("request_timeout_seconds", 20)
+TIMEOUT = 20
 RESEARCH = CONFIG.get("research", {})
+REDDIT_LIMIT = 12
 # Reddit blocks the descriptive wiki UA and the /hot.rss path (403); the plain /.rss feed with a
 # browser UA serves fine at our once-per-session rate. The Wiki (prices) still needs the
 # descriptive UA, so this browser UA is reddit-only.
@@ -131,7 +132,7 @@ def reddit(limit: int | None = None) -> dict:
     their `subreddit`. A failure surfaces as a citable error rather than a silent drop."""
     subs = RESEARCH.get("subreddit", "2007scape")
     subs = [subs] if isinstance(subs, str) else list(subs)
-    limit = limit or RESEARCH.get("reddit_limit", 12)
+    limit = limit or REDDIT_LIMIT
 
     items, errors = [], []
     for i, sub in enumerate(subs):

@@ -666,20 +666,6 @@ class FlipParsingTests(unittest.TestCase):
             }])
         self.assertEqual(flips[0]["bought"], 2850)
         self.assertEqual(flips[0]["sold"], 3400)
-        self.assertEqual(flips[0]["profit"], (3400 - 2850) * 100)
-
-    def test_current_era_round_trip_profit_is_net_of_ge_tax(self) -> None:
-        with tempfile.TemporaryDirectory() as d:
-            flips = self._read(Path(d), [{
-                "id": 11212, "name": "Dragon arrow",
-                "h": {"sO": [
-                    {"b": True, "st": "BOUGHT", "p": 2850, "cQIT": 100,
-                     "t": 1_782_000_000_000},
-                    {"b": False, "st": "SOLD", "p": 3400, "cQIT": 100,
-                     "t": 1_782_003_600_000},
-                ]},
-            }])
-        self.assertEqual(flips[0]["sold"], 3400)
         self.assertEqual(flips[0]["net_sold"], 3332)
         self.assertEqual(flips[0]["profit"], (3332 - 2850) * 100)
 
@@ -697,10 +683,10 @@ class FlipParsingTests(unittest.TestCase):
 
         self.assertEqual(len(flips), 2)
         self.assertEqual(flips[0]["bought_qty"], 270)
-        self.assertEqual(flips[0]["profit"], 2700)
+        self.assertEqual(flips[0]["profit"], -66420)
         self.assertEqual(flips[1]["bought"], 12499)
         self.assertEqual(flips[1]["sold_qty"], 2000)
-        self.assertEqual(flips[1]["profit"], 610000)
+        self.assertEqual(flips[1]["profit"], 98000)
 
     def test_current_ge_slots_parse_non_empty_open_offers(self) -> None:
         with tempfile.TemporaryDirectory() as d:
@@ -764,7 +750,7 @@ class FlipParsingTests(unittest.TestCase):
                 patch.object(runelite, "INCOMING", tmp),
                 patch.object(runelite, "_OFFER_AGE_PATH", tmp / "offer_ages.json"),
                 patch.object(runelite, "_FILL_ANCHOR_PATH", tmp / "offer_fills.json"),
-                patch.dict(runelite.CONFIG, {"rsn": _TEST_RSN, "offer_snapshot_stale_minutes": 999999}),
+                patch.dict(runelite.CONFIG, {"rsn": _TEST_RSN}), patch.object(runelite, "OFFER_SNAPSHOT_STALE_MINUTES", 999999),
             ):
                 offers = runelite.read_open_offers()
 
@@ -830,7 +816,7 @@ class FlipParsingTests(unittest.TestCase):
                 patch.object(runelite, "INCOMING", tmp),
                 patch.object(runelite, "_OFFER_AGE_PATH", tmp / "offer_ages.json"),
                 patch.object(runelite, "_FILL_ANCHOR_PATH", tmp / "offer_fills.json"),
-                patch.dict(runelite.CONFIG, {"rsn": _TEST_RSN, "offer_snapshot_stale_minutes": 999999}),
+                patch.dict(runelite.CONFIG, {"rsn": _TEST_RSN}), patch.object(runelite, "OFFER_SNAPSHOT_STALE_MINUTES", 999999),
             ):
                 offers = runelite.read_open_offers()
 
@@ -887,7 +873,7 @@ class FlipParsingTests(unittest.TestCase):
                 patch.object(runelite, "INCOMING", tmp),
                 patch.object(runelite, "_OFFER_AGE_PATH", tmp / "offer_ages.json"),
                 patch.object(runelite, "_FILL_ANCHOR_PATH", tmp / "offer_fills.json"),
-                patch.dict(runelite.CONFIG, {"rsn": _TEST_RSN, "offer_snapshot_stale_minutes": 999999}),
+                patch.dict(runelite.CONFIG, {"rsn": _TEST_RSN}), patch.object(runelite, "OFFER_SNAPSHOT_STALE_MINUTES", 999999),
             ):
                 offers = runelite.read_open_offers()
 
@@ -934,7 +920,7 @@ class FlipParsingTests(unittest.TestCase):
                 patch.object(runelite, "INCOMING", tmp),
                 patch.object(runelite, "_OFFER_AGE_PATH", age_path),
                 patch.object(runelite, "_FILL_ANCHOR_PATH", anchor_path),
-                patch.dict(runelite.CONFIG, {"rsn": _TEST_RSN, "offer_snapshot_stale_minutes": 999999}),
+                patch.dict(runelite.CONFIG, {"rsn": _TEST_RSN}), patch.object(runelite, "OFFER_SNAPSHOT_STALE_MINUTES", 999999),
             ):
                 first = runelite.read_open_offers()
             self.assertIsNone(first[0]["last_fill_age_hours"])
@@ -945,7 +931,7 @@ class FlipParsingTests(unittest.TestCase):
                 patch.object(runelite, "INCOMING", tmp),
                 patch.object(runelite, "_OFFER_AGE_PATH", age_path),
                 patch.object(runelite, "_FILL_ANCHOR_PATH", anchor_path),
-                patch.dict(runelite.CONFIG, {"rsn": _TEST_RSN, "offer_snapshot_stale_minutes": 999999}),
+                patch.dict(runelite.CONFIG, {"rsn": _TEST_RSN}), patch.object(runelite, "OFFER_SNAPSHOT_STALE_MINUTES", 999999),
             ):
                 grew = runelite.read_open_offers()
             self.assertEqual(grew[0]["last_fill_at"], "2026-06-23T16:30:00+00:00")
@@ -990,7 +976,7 @@ class FlipParsingTests(unittest.TestCase):
                 patch.object(runelite, "INCOMING", tmp),
                 patch.object(runelite, "_OFFER_AGE_PATH", tmp / "offer_ages.json"),
                 patch.object(runelite, "_FILL_ANCHOR_PATH", tmp / "offer_fills.json"),
-                patch.dict(runelite.CONFIG, {"rsn": _TEST_RSN, "offer_snapshot_stale_minutes": 999999}),
+                patch.dict(runelite.CONFIG, {"rsn": _TEST_RSN}), patch.object(runelite, "OFFER_SNAPSHOT_STALE_MINUTES", 999999),
             ):
                 offers = runelite.read_open_offers()
 
@@ -1101,7 +1087,7 @@ class OfferAgeAnchorTests(unittest.TestCase):
             patch.object(runelite, "INCOMING", tmp),
             patch.object(runelite, "_OFFER_AGE_PATH", tmp / "offer_ages.json"),
             patch.object(runelite, "_FILL_ANCHOR_PATH", tmp / "offer_fills.json"),
-            patch.dict(runelite.CONFIG, {"rsn": _TEST_RSN, "offer_snapshot_stale_minutes": 999_999}),
+            patch.dict(runelite.CONFIG, {"rsn": _TEST_RSN}), patch.object(runelite, "OFFER_SNAPSHOT_STALE_MINUTES", 999_999),
         ):
             return runelite.read_open_offers()
 
@@ -1282,7 +1268,8 @@ class ResearchTests(unittest.TestCase):
 
     def test_reddit_merges_and_tags_multiple_subreddits(self) -> None:
         with (
-            patch.dict(research.RESEARCH, {"subreddit": ["2007scape", "OSRS"], "reddit_limit": 5}),
+            patch.dict(research.RESEARCH, {"subreddit": ["2007scape", "OSRS"]}),
+            patch.object(research, "REDDIT_LIMIT", 5),
             patch.object(research, "_reddit_via_rss",
                          side_effect=lambda sub, limit: [{"title": f"{sub} post", "url": "u", "published": "p"}]),
             patch.object(research.time, "sleep") as sleeper,

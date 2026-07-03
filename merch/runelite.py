@@ -20,7 +20,8 @@ from pathlib import Path
 from .config import ROOT, load_config
 
 CONFIG = load_config()
-INCOMING = ROOT / CONFIG.get("incoming_dir", "data/incoming")
+INCOMING = ROOT / "data/incoming"
+OFFER_SNAPSHOT_STALE_MINUTES = 5
 
 
 def _configured_rsn() -> str | None:
@@ -123,7 +124,7 @@ def _fifo_lots(record: dict, offers: list[dict]) -> list[dict]:
             continue
 
         remaining = qty
-        net_price = net_sale_price(iid, name, price, _offer_ts(offer))
+        net_price = net_sale_price(iid, name, price)
         for lot in lots:
             if remaining <= 0:
                 break
@@ -255,12 +256,11 @@ def _read_open_offers_from_export() -> list[dict]:
     if not exported_at:
         raise RuntimeError("current GE slot export has no valid exportedAt timestamp")
     snapshot_age = datetime.now(timezone.utc) - exported_at.astimezone(timezone.utc)
-    stale_minutes = CONFIG.get("offer_snapshot_stale_minutes", 5)
-    if snapshot_age.total_seconds() > stale_minutes * 60:
+    if snapshot_age.total_seconds() > OFFER_SNAPSHOT_STALE_MINUTES * 60:
         age_minutes = snapshot_age.total_seconds() / 60
         raise RuntimeError(
             f"current GE slot export is stale ({age_minutes:.1f}m old; "
-            f"limit {stale_minutes}m); the export heartbeats every 10s while logged in, "
+            f"limit {OFFER_SNAPSHOT_STALE_MINUTES}m); the export heartbeats every 10s while logged in, "
             f"so log in to RuneLite (or toggle 'Export current GE slots' off/on) and re-sync"
         )
 
