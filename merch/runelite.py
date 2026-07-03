@@ -26,7 +26,7 @@ OFFER_SNAPSHOT_STALE_MINUTES = 5
 
 def _configured_rsn() -> str | None:
     rsn = str(CONFIG.get("rsn") or "").strip()
-    return rsn if rsn and rsn != "YOUR_RSN" else None
+    return rsn or None
 
 
 def _single_profile_stem(directory: Path) -> str | None:
