@@ -31,6 +31,8 @@ SURVIVAL_MIN_TRADES = 4       # backtest round-trips required to trust a pattern
 REPRICE_TOLERANCE = 0.02      # band drift past this fraction triggers a reprice verdict
 STALE_BUY_HOURS = 4           # an intraday entry that did not fill has missed its window
 STALE_SELL_HOURS = 6          # stale active sells should clear, not chase the sell band
+OVERPRICED_ASK_TOLERANCE = 0.05  # a no-band ask this far above the live bid has no evidence
+                                 # behind the premium; reprice instead of waiting out staleness
 OUTLIER_BID_DROP = 0.10       # a live bid this far below the recent low band is a bad tick, not the market
 PATIENT_PROBE_CAP_PCT = 0.05  # experimental near-band bid; measured, never treated as validated
 TIME_OF_DAY_BUY_CANCEL_HOURS = 6
@@ -639,6 +641,10 @@ def _decide_triage(offer: dict, sig: dict | None, quote: dict | None,
                     if not unproven_fresh else
                     f"age unknown (plugin lost creation time) — clear at live bid {bid}")
             return {**base, "verdict": "reprice", "new_price": bid, "note": note}
+        if bid and price > bid * (1 + OVERPRICED_ASK_TOLERANCE):
+            return {**base, "verdict": "reprice", "new_price": bid,
+                    "note": (f"ask {price} is {100 * (price / bid - 1):.0f}% above live bid "
+                             f"{bid} — no band evidence supports the premium; clear at bid")}
         if bid and bid < price:
             return {**base, "verdict": "hold",
                     "note": (f"no intraday band; ask {price} above live bid {bid} but not "

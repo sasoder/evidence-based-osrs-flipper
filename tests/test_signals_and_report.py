@@ -1231,6 +1231,37 @@ class UnknownAgeTriageTests(unittest.TestCase):
         self.assertNotIn("fresh", res["note"])
 
 
+class OverpricedNoBandAskTests(unittest.TestCase):
+    """A no-band sell far above the live bid must not hide behind the 6h stale clock."""
+
+    def _offer(self, price: int) -> dict:
+        return {"id": 11228, "side": "sell", "qty": 125, "filled_qty": 0,
+                "price": price, "age_hours": 0.14, "last_fill_age_hours": None,
+                "state": "ACTIVE"}
+
+    def test_far_above_bid_reprices_to_bid_before_stale(self) -> None:
+        quote = {"name": "Dragon arrow(p+)", "current_high": 2234}
+        res = plan._decide_triage(self._offer(3598), None, quote)
+        self.assertEqual(res["verdict"], "reprice")
+        self.assertEqual(res["new_price"], 2234)
+        self.assertIn("above live bid", res["note"])
+
+    def test_modest_premium_keeps_stale_grace(self) -> None:
+        quote = {"name": "Dragon arrow(p+)", "current_high": 2234}
+        res = plan._decide_triage(self._offer(2300), None, quote)  # ~3% above bid
+        self.assertEqual(res["verdict"], "hold")
+        self.assertIn("not stale yet", res["note"])
+
+    def test_cost_guard_clamps_overpriced_reprice_to_break_even(self) -> None:
+        quote = {"name": "Dragon arrow(p+)", "current_high": 2234}
+        offer = self._offer(3598)
+        res = plan._apply_cost_guard(
+            plan._decide_triage(offer, None, quote), offer, quote, cost=2500)
+        self.assertEqual(res["verdict"], "reprice")
+        self.assertEqual(res["new_price"], plan._break_even(2500))
+        self.assertTrue(res["cost_floor"])
+
+
 class ResearchTests(unittest.TestCase):
     _NEWS_RSS = (
         '<rss version="2.0"><channel><title>OSRS</title>'
