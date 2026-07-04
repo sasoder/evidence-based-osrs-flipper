@@ -139,15 +139,15 @@ def _buy_row(sig: dict, bt: dict, qty: int, execution_evidence: dict | None = No
         )
     return {
         "id": sig["id"], "name": sig["name"], "action": "buy", "bucket": "flip",
-        "qty": qty, "price": sig["buy"], "sell_target": sig["sell"],
+        "qty": qty, "price": sig["entry_price"], "sell_target": sig["exit_price"],
         "live_low": sig.get("current_low"), "live_high": sig.get("current_high"),
         "horizon": "0-12h",
-        "reason": (f"live low entry @ {sig['buy']} within {int(signals.BUY_QUANTILE*100)}th-pctile band; "
+        "reason": (f"live low entry @ {sig['entry_price']} within {int(signals.BUY_QUANTILE*100)}th-pctile band; "
                    f"6h regime {sig['regime']['level']}; survives 12h reprice-to-clear "
                    f"(+{bt['total_profit_per_unit']:,}/u over {bt['trades']} trips); "
                    f"fillable ~{sig['fillable_qty']}/{int(sig['fill_window_hours'])}h"
                    f"{personal}{staple_note}"),
-        "predicted": {"direction": "up", "target": sig["sell"],
+        "predicted": {"direction": "up", "target": sig["exit_price"],
                       "by": _by_hours()},
         "confidence": 0.65 if staple and staple.get("staple") else 0.60,
         "strategy": "patient-band",
@@ -164,8 +164,8 @@ def _time_buy_row(sig: dict, qty: int) -> dict:
         "bucket": "flip-time-of-day",
         "strategy": "time-of-day",
         "qty": qty,
-        "price": sig["buy"],
-        "sell_target": sig["sell"],
+        "price": sig["entry_price"],
+        "sell_target": sig["exit_price"],
         "live_low": sig.get("current_low"),
         "live_high": sig.get("current_high"),
         "horizon": "6-24h",
@@ -179,7 +179,7 @@ def _time_buy_row(sig: dict, qty: int) -> dict:
         ),
         "predicted": {
             "direction": "up",
-            "target": sig["sell"],
+            "target": sig["exit_price"],
             "by": _by_hours(sig["hold_hours"]),
         },
         "hard_exit_at": _by_hours(24),
@@ -201,8 +201,8 @@ def _active_buy_row(sig: dict, qty: int, expected_profit: int) -> dict:
         "action": "buy",
         "bucket": "flip-active",
         "qty": qty,
-        "price": sig["buy"],
-        "sell_target": sig["sell"],
+        "price": sig["entry_price"],
+        "sell_target": sig["exit_price"],
         "live_low": sig.get("current_low"),
         "live_high": sig.get("current_high"),
         "horizon": "0-90m",
@@ -218,7 +218,7 @@ def _active_buy_row(sig: dict, qty: int, expected_profit: int) -> dict:
         ),
         "predicted": {
             "direction": "up",
-            "target": sig["sell"],
+            "target": sig["exit_price"],
             "by": _by_hours(ACTIVE_HORIZON_MINUTES / 60),
         },
         "confidence": 0.45 if sig.get("short_drift_pct") is None else 0.55,
@@ -234,7 +234,7 @@ def _sell_fill_row(offer: dict, triage: dict) -> dict | None:
     if qty <= 0:
         return None
     market = signals.item_signal(offer["id"]) or signals.live_quote(offer["id"])
-    price = (market or {}).get("sell") or _sane_bid(market)
+    price = (market or {}).get("exit_price") or _sane_bid(market)
     if not price:
         raise ValueError(f"cannot price filled buy for resale: {offer}")
     reason = f"sell {qty} filled unit(s) after {triage['verdict']}ing the buy offer"
@@ -297,6 +297,18 @@ def _fmt(value) -> str:
     if isinstance(value, int):
         return f"{value:,}"
     return str(value)
+
+
+def _fmt_live(row: dict) -> str:
+    low = row.get("live_low")
+    high = row.get("live_high")
+    if high is None and low is None:
+        return ""
+    if high is None:
+        return f"{_fmt(low)}/-"
+    if low is None:
+        return f"-/{_fmt(high)}"
+    return f"{_fmt(low)}/{_fmt(high)}"
 
 
 def _action_rows(p: dict) -> list[dict]:
@@ -653,7 +665,7 @@ def _decide_triage(offer: dict, sig: dict | None, quote: dict | None,
                              f"stale yet — clears after {STALE_SELL_HOURS}h without fills")}
         return {**base, "verdict": "hold", "note": "no intraday band; already at/below live bid"}
     regime_high = sig["regime"]["level"] == "high"
-    target = sig["buy"] if side == "buy" else sig["sell"]
+    target = sig["entry_price"] if side == "buy" else sig["exit_price"]
     price = offer.get("price") or 0
     if side == "buy" and regime_high:
         return {**base, "verdict": "cancel", "note": f"regime high ({sig['regime']['reason']}) — free the slot"}
@@ -669,7 +681,7 @@ def _decide_triage(offer: dict, sig: dict | None, quote: dict | None,
     if side == "buy" and strategy == "patient-probe" and not sig.get("price_fresh"):
         return {**base, "verdict": "cancel", "note": "patient probe lost fresh market data — free the slot"}
     if side == "buy":
-        live_low = sig["buy"]
+        live_low = sig["entry_price"]
         if price > live_low * (1 + REPRICE_TOLERANCE):
             return {**base, "verdict": "reprice", "new_price": live_low,
                     "note": f"lower to live low {live_low}"}
@@ -983,7 +995,7 @@ def plan(cash: int, offers: list[dict] | None = None,
             else out["active_skipped"] if strategy_type == "active"
             else out["time_skipped"]
         )
-        buy = sig["buy"] or 0
+        buy = sig["entry_price"] or 0
         evidence = None
         if strategy_type == "patient":
             personal_fillable, evidence = execution_stats.adjusted_fillable_qty(
@@ -1033,7 +1045,7 @@ def plan(cash: int, offers: list[dict] | None = None,
     for sig, bt in probe_survivors:
         if free_slots <= 0:
             break
-        buy = sig["buy"] or 0
+        buy = sig["entry_price"] or 0
         personal_fillable, evidence = execution_stats.adjusted_fillable_qty(
             sig["id"], sig["fillable_qty"] or 0, personal_stats
         )
@@ -1061,7 +1073,7 @@ def plan(cash: int, offers: list[dict] | None = None,
             "strategy": "patient-probe",
             "qty": qty,
             "price": buy,
-            "sell_target": sig["sell"],
+            "sell_target": sig["exit_price"],
             "live_low": sig.get("current_low"),
             "live_high": sig.get("current_high"),
             "horizon": "0-12h",
@@ -1072,7 +1084,7 @@ def plan(cash: int, offers: list[dict] | None = None,
                 f"{bt['trades']} trips), but fill reachability is unvalidated; "
                 f"cancel zero-fill after {STALE_BUY_HOURS}h"
             ),
-            "predicted": {"direction": "up", "target": sig["sell"], "by": _by_hours()},
+            "predicted": {"direction": "up", "target": sig["exit_price"], "by": _by_hours()},
             "confidence": 0.45,
             "expected_profit": expected_profit,
             **({"execution_stats": evidence} if evidence else {}),
@@ -1127,8 +1139,8 @@ def _render_md(p: dict) -> str:
         L += [
             "",
             "## Actions",
-            "| action | item | qty | price | live low | live high | sell target | deadline | reason |",
-            "|---|---|---:|---:|---:|---:|---:|---|---|",
+            "| action | item | qty | price | live lo/hi | sell target | deadline | reason |",
+            "|---|---|---:|---:|---:|---:|---|---|",
         ]
         for r in rows:
             # Fold the offer side into the action where it isn't implied: new
@@ -1139,7 +1151,7 @@ def _render_md(p: dict) -> str:
             L.append(
                 f"| **{action}** | {_fmt(r['item'])} | "
                 f"{_fmt(r['qty'])} | {_fmt(r['price'])} | "
-                f"{_fmt(r.get('live_low'))} | {_fmt(r.get('live_high'))} | "
+                f"{_fmt_live(r)} | "
                 f"{_fmt(r['sell_target'])} | {_fmt(r['deadline'])} | {_fmt(r['reason'])} |"
             )
     return "\n".join(L)

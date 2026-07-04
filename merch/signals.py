@@ -425,9 +425,9 @@ def item_signal(
         "name": meta["name"],
         "timestep": timestep,
         "regime_timestep": REGIME_TIMESTEP,
-        "buy": buy_price,
+        "entry_price": buy_price,
         "buy_band": target_buy,
-        "sell": target_sell,
+        "exit_price": target_sell,
         "sell_band_full": sell_band_full,
         "trend": trend,
         "margin": margin,
@@ -612,8 +612,10 @@ def active_margin_scan(seed_limit: int | None = None, limit: int = 20) -> dict:
         candidates.append({
             "id": iid,
             "name": seed["name"],
-            "buy": buy,
-            "sell": sell,
+            "entry_price": buy,
+            "exit_price": sell,
+            "current_low": latest["current_low"],
+            "current_high": latest["current_high"],
             "net_margin": net_margin,
             "roi_pct": roi_pct,
             "ge_limit": seed.get("ge_limit"),
@@ -757,8 +759,10 @@ def time_of_day_signal(item_id: int) -> dict | None:
     return {
         "id": item_id,
         "name": meta["name"],
-        "buy": buy,
-        "sell": sell,
+        "entry_price": buy,
+        "exit_price": sell,
+        "current_low": latest["current_low"],
+        "current_high": latest["current_high"],
         "ge_limit": meta["limit"],
         "fillable_qty": fillable_qty,
         "expected_profit_per_unit": expected_profit,
@@ -845,8 +849,8 @@ def backtest_signal(
         if position is None:
             if low and low <= buy:
                 position = {
-                    "buy": buy,
-                    "sell": sell,
+                    "entry_price": buy,
+                    "exit_price": sell,
                     "entry_index": i,
                     "entry_ts": row["timestamp"],
                     "min_low": low,
@@ -857,21 +861,21 @@ def backtest_signal(
             position["min_low"] = min(position["min_low"], low)
         held = i - position["entry_index"]
         timed_out = max_hold_points is not None and held >= max_hold_points and high
-        if (high and high >= position["sell"]) or timed_out:
+        if (high and high >= position["exit_price"]) or timed_out:
             hold_points = held
-            exit_price = position["sell"] if (high and high >= position["sell"]) else high
+            exit_price = position["exit_price"] if (high and high >= position["exit_price"]) else high
             if exit_price is None:
                 continue
-            profit = exit_price - position["buy"] - tax(exit_price)
+            profit = exit_price - position["entry_price"] - tax(exit_price)
             trades.append({
                 "entry_ts": position["entry_ts"],
                 "exit_ts": row["timestamp"],
                 "profit": profit,
                 "hold_points": hold_points,
-                "forced": exit_price != position["sell"],
+                "forced": exit_price != position["exit_price"],
             })
             adverse_pct.append(
-                round((position["min_low"] - position["buy"]) / position["buy"] * 100, 2)
+                round((position["min_low"] - position["entry_price"]) / position["entry_price"] * 100, 2)
             )
             position = None
 

@@ -62,14 +62,14 @@ Typical requests, in plain chat:
 If your message doesn't include the numbers, the agent asks: liquid GP, whether you'll be
 around, which strategies, slot cap. A plan looks like this:
 
-| action | item | qty | price | live low | live high | deadline |
-|---|---|---:|---:|---:|---:|---|
-| reprice sell | Ornate maul handle | 12 | 747,005 | 731,212 | 747,005 | |
-| collect | Stymphike feather | 5,000 | 1,789 | | | |
-| buy | Halibut | 958 | 2,147 | 2,147 | 2,290 | 21:56 UTC |
-| buy | Accursed sceptre (u) | 7 | 6,491,874 | 6,491,874 | 6,822,410 | 23:26 UTC |
+| action | item | qty | price | live lo/hi | deadline |
+|---|---|---:|---:|---:|---|
+| reprice sell | Ornate maul handle | 12 | 747,005 | 731,212/747,005 | |
+| collect | Stymphike feather | 5,000 | 1,789 | | |
+| buy | Halibut | 958 | 2,147 | 2,147/2,290 | 21:56 UTC |
+| buy | Accursed sceptre (u) | 7 | 6,491,874 | 6,491,874/6,822,410 | 23:26 UTC |
 
-Every row shows the item's latest instant-sell/instant-buy prices (live low/high) so you can
+Every row shows the item's latest instant-sell/instant-buy prices (live lo/hi) so you can
 check the call, and includes its reason — for row 4: fresh prices on both sides, 318k/unit
 net spread after tax, 36 buys/35 sells in the last hour, cancel unfilled after 30m, exit by 90m.
 
