@@ -14,7 +14,11 @@ not pre-create them.
 ### 1. Dependencies
 
 Verify `uv` is installed (if not, point the user to
-https://docs.astral.sh/uv/getting-started/installation/), then run `uv sync` and `scripts/test.sh`.
+https://docs.astral.sh/uv/getting-started/installation/), then run `uv sync` and:
+
+```bash
+uv run python -m unittest discover -s tests -v
+```
 
 ### 2. RuneLite plugin
 
@@ -40,11 +44,10 @@ Ask in one round (a single structured multi-question prompt if the engine suppor
 - **RSN**: ask only if `data/incoming` shows zero or multiple Flipping Utilities profiles — a
   single profile is auto-detected and needs no config.
 - **Research subreddits** (multi-select): which subreddits the optional research overlay reads.
-  Offer exactly these options: `2007scape` (pre-selected), `OSRSflipping` (pre-selected),
-  `GrandExchange` — plus the engine's built-in "Other" for custom subs. Do not invent additional
-  options (no "None"/"Skip" entry: the overlay is optional and rarely invoked, so an empty
-  selection needs no dedicated option). Write `research.subreddit` only when the selection
-  differs from the defaults.
+  Default to no subreddits selected. Offer exactly these options: `2007scape` (recommended),
+  `OSRSflipping` (recommended), `GrandExchange` — plus the engine's built-in "Other" for custom
+  subs. Do not invent additional options (no "None"/"Skip" entry: an empty selection means no
+  Reddit sources). Write `research.subreddit` only when the user selects one or more subreddits.
 
 Write the answers to gitignored `config/settings.json` (shape in `config/settings.example.json`,
 which also serves as the fallback when no settings.json exists). Format the user-agent as
