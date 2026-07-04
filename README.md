@@ -5,7 +5,7 @@ Wiki prices, and gives you exact buy/sell/cancel/reprice instructions to type in
 never touches the game: you place every offer yourself.
 
 <p align="center">
-  <img src="images/demo.gif" alt="Asking the agent for a flip plan and getting back an action table" width="700">
+  <img src="images/demo.png" alt="Asking the agent for a flip plan and getting back an action table" width="700">
 </p>
 
 Every call records a reason and a prediction (direction, target, deadline), and later runs
@@ -127,7 +127,7 @@ Your exports and local state stay on disk and out of git:
 
 Evidence is my RSN, and the suggestions are evidence-based, so the name was sitting right
 there. A week of following the calls on roughly 85m liquid returned about 16m, which would
-look more impressive if I wasn't poor:
+look more impressive if I wasn't poor.
 
 <p align="center">
   <img src="images/profit-week.png" alt="Flipping Utilities weekly profit graph showing about 16m profit" height="220">
