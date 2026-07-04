@@ -16,36 +16,39 @@ commands and outputs listed below.
 ### 0. Collect the user's inputs
 
 Parse the user's message first — never re-ask anything already stated. Skip straight to step 1
-only when the message supplies liquid gp **and** attendance (lanes and slots may default
-silently). Liquid gp alone is not enough: attendance changes which lanes are safe, so a bare
+only when every needed new-buy input is either stated or intentionally selected in the intake:
+liquid gp, attendance, strategies, and slot cap. Do **not** silently omit strategies or slots
+from the intake just because they have defaults; the user should see and accept those defaults.
+Liquid gp alone is not enough: attendance changes which strategies are safe, so a bare
 "30m, what should I buy" still gets the intake prompt.
 
 Exception — a pure offer-review request ("what should I do with my offers?", "look at my
 slots") needs no intake at all: run `merch.plan --cash 0 --max-new-slots 0 --markdown` and
-present the triage. Ask for liquid gp only if the user then wants new buys. Collect the missing inputs in one round
-(a single structured multi-question prompt if the engine supports one, otherwise one concise
-message):
+present the open-offer checks. Ask for the full new-buy intake only if the user then wants new
+buys. Collect all missing inputs in one round (a single structured multi-question prompt if the
+engine supports one, otherwise one concise message):
 
 - **Liquid gp** (required): suggested options `10m` / `50m` / `100m` / `250m`, exact amounts
   welcome. Pass the exact figure to `--cash`. Liquid gp is always reported by the user because
   it is the amount they want this run to deploy.
 - **Attendance**: `At keyboard — can manage offers (default)` → no flag; `Away a few hours` →
   ask roughly how long and pass `--away-hours <n>`; `Away 8h+ / sleeping` → `--horizon
-  overnight`. Attendance is a planner constraint like lanes and slots: the planner itself
-  disables any lane whose offers need management sooner than the user returns (active needs a
+  overnight`. Attendance is a planner constraint like strategies and slots: the planner itself
+  disables any strategy whose offers need management sooner than the user returns (active needs a
   cancel decision within 30 minutes) and records the exclusion. `--away-hours 8`+ implies
-  overnight, which also sizes patient to the 12h window. Never add or remove lanes by hand to
+  overnight, which also sizes patient to the 12h window. Never add or remove strategies by hand to
   compensate for attendance — pass the absence to the planner.
-- **Lanes** (multi-select): `Balanced — all of the below (default)` / `Patient` / `Active` /
-  `Time-of-day` / `Probe`. Lane sets are unioned, so Balanced absorbs any other selection;
-  if it is picked, pass `--lanes balanced` and ignore the rest. Otherwise join the individual
-  picks with commas for `--lanes`. The `conservative` preset remains valid as typed input.
+- **Strategies** (multi-select): `Balanced — all of the below (default)` / `Patient` /
+  `Active` / `Time-of-day` / `Probe`. Strategy sets are unioned, so Balanced absorbs any other
+  selection; if it is picked, pass `--strategies balanced` and ignore the rest. Otherwise join
+  the individual picks with commas for `--strategies`. The `conservative` preset remains valid
+  as typed input.
   An active-only request implies at-keyboard; don't ask attendance.
 - **Slots**: `All free (default)` / `2` / `4`, exact counts welcome → `--max-new-slots`.
 
-Contradiction guard: any stated absence disables the active lane, so active-only + away errors
-out of the planner with the reason — relay it and re-ask instead of hand-editing lanes. If the
-user changes lanes or attendance mid-session, rerun the planner with both current values; a lane
+Contradiction guard: any stated absence disables the active strategy, so active-only + away errors
+out of the planner with the reason — relay it and re-ask instead of hand-editing strategies. If the
+user changes strategies or attendance mid-session, rerun the planner with both current values; a strategy
 request never overrides a previously stated absence.
 
 ### 1. Collect live inputs
@@ -75,10 +78,10 @@ If the user gave preferences, pass them directly:
 
 ```bash
 uv run python -m merch.plan --cash <liquid_gp> \
-    --lanes patient,active --max-new-slots 3 --write-intents --markdown
+    --strategies patient,active --max-new-slots 3 --write-intents --markdown
 ```
 
-Lane and slot preferences are planner constraints, not LLM discretion. Do not add or remove rows
+Strategy and slot preferences are planner constraints, not LLM discretion. Do not add or remove rows
 by hand after the planner returns. For overnight requests, run `merch.plan --horizon overnight
 --seed-limit 0 --time-seed-limit 0`; this excludes active-margin calls before sizing and intent
 writing, sizes patient candidates to the 12h hold window, and also checks the account's best FU
@@ -102,7 +105,7 @@ the strategy gate.
   FU-history note only when you have explicit FU stats to cite. Do not invent
   grading/accountability summaries from repo state.
 - Then interpret it: for each row the user asks about, explain the verdict in plain terms using
-  the row's live low/high, break-even, and quantified alternatives. "Untracked offer" means the
+  the row's live lo/hi, break-even, and quantified alternatives. "Untracked offer" means the
   outcome won't be strategy-graded — the advice still applies in full; never present an
   untracked row as "not my problem".
 - `--write-intents` writes the thin pending queue consumed by the FU fork. It contains only
@@ -166,9 +169,9 @@ enough round-trips (`trades >= 4`) under that gate. Rank survivors by expected r
 not paper margin.
 
 Near-band bids that have not actually traded at the buy band are never promoted into the normal
-lane. They may enter a separate **`flip-patient-probe`** experiment only when the live instant-sell
+strategy. They may enter a separate **`flip-patient-probe`** experiment only when the live instant-sell
 print is within 3% above the band, the normal survival/regime gates pass, and expected realized
-profit clears the slot floor. This lane uses at most 5% of liquid across all probe offers. It
+profit clears the slot floor. This strategy uses at most 5% of liquid across all probe offers. It
 exists to gather real fill evidence; its distance rule is not backtest-validated and never weakens
 the production fresh-live-low gate.
 
@@ -176,12 +179,12 @@ Daily UTC patterns use a separate **`flip-time-of-day`** experiment. `merch.sign
 tests 6-hour entry/exit windows using roughly three months of data: the older 70% selects the
 window and the newest 30% must independently remain net-positive with at least 20 observations,
 a positive median after-tax profit, and at least a 60% win rate; the training window needs at
-least 40 observations. This lane sizes to requested/free slots, fillability, GE limit, available
+least 40 observations. This strategy sizes to requested/free slots, fillability, GE limit, available
 liquid, and the normal slot-profit floor, cancels a zero-fill entry after its 6-hour UTC window,
 and hard-exits by 24h. It never weakens the normal patient-band gate or gets merged into patient
 performance.
 
-High-value gear uses a separate **`flip-active`** lane because ordinary 15-90 minute margin
+High-value gear uses a separate **`flip-active`** strategy because ordinary 15-90 minute margin
 flipping is not the percentile-band strategy. `merch.signals active-scan` screens items above
 1m for fresh two-sided prints, after-tax net margin, minimum ROI, real flow on both sides, and
 no sharp 5m decline. Active quantity is capped only by the GE limit and available liquid gp.
@@ -200,8 +203,8 @@ liquidity, budget, or slot gates.
   it: deploy as much as the gates allow within the user's requested/free slots. Leaving more
   than 1% unspent must come with the blocking constraint stated; never weaken gates merely to
   hit full utilization.
-- The user may constrain the run with planner flags such as `--lanes patient,active` and
-  `--max-new-slots 3`. Treat those as deterministic constraints. Do not add disabled lanes back
+- The user may constrain the run with planner flags such as `--strategies patient,active` and
+  `--max-new-slots 3`. Treat those as deterministic constraints. Do not add disabled strategies back
   by hand, and do not exceed the slot cap to improve utilization.
 - Size every offer to at most the signal's `fillable_qty` (estimated fills over the next 4h).
   A thin item (low `score` driven by small
@@ -245,7 +248,7 @@ liquidity, budget, or slot gates.
 - Grade from **real FU fills, not market drift**. FU profit/history is authoritative for what
   happened; planner intents only supply strategy attribution and the prediction to compare
   against.
-- Keep strategy lanes separate: patient-band, patient-probe, active-margin, time-of-day, manual,
+- Keep strategies separate: patient-band, patient-probe, active-margin, time-of-day, manual,
   and liquidation should not be mixed when measuring realized gp/hour.
 - Track rolling hit-rate and calibration (did 60%-confidence calls hit ~60%?). Patterns that
   repeatedly miss get demoted; patterns that work get more capital. State misses plainly.

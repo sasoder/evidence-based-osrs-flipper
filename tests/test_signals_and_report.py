@@ -127,7 +127,7 @@ class SignalTests(unittest.TestCase):
 
         assert signal is not None
         self.assertEqual(signal["buy_band"], 100)
-        self.assertEqual(signal["buy"], 90)
+        self.assertEqual(signal["entry_price"], 90)
         self.assertTrue(signal["ready_to_buy"])
 
     def test_near_band_bid_is_probe_only_not_production_ready(self) -> None:
@@ -148,7 +148,7 @@ class SignalTests(unittest.TestCase):
 
         assert signal is not None
         self.assertEqual(signal["buy_band"], 100)
-        self.assertEqual(signal["buy"], 100)
+        self.assertEqual(signal["entry_price"], 100)
         self.assertFalse(signal["ready_to_buy"])
         self.assertTrue(signal["patient_probe_ready"])
 
@@ -196,8 +196,10 @@ class SignalTests(unittest.TestCase):
 
         self.assertEqual(len(result["candidates"]), 1)
         row = result["candidates"][0]
-        self.assertEqual(row["buy"], 10_000_001)
-        self.assertEqual(row["sell"], 10_299_999)
+        self.assertEqual(row["entry_price"], 10_000_001)
+        self.assertEqual(row["exit_price"], 10_299_999)
+        self.assertEqual(row["current_low"], 10_000_000)
+        self.assertEqual(row["current_high"], 10_300_000)
         self.assertEqual(row["max_qty"], 1)
         self.assertEqual(row["fillable_qty"], 1)
         self.assertGreater(row["expected_value_per_unit"], 0)
@@ -275,6 +277,8 @@ class SignalTests(unittest.TestCase):
         assert signal is not None
         self.assertGreaterEqual(signal["test"]["trades"], signals.TIME_OF_DAY_MIN_TEST_TRADES)
         self.assertGreater(signal["test"]["median_profit_per_unit"], 0)
+        self.assertEqual(signal["current_low"], 100)
+        self.assertEqual(signal["current_high"], 111)
         self.assertLessEqual(signal["hold_hours"], 24)
 
 
@@ -334,7 +338,7 @@ class TrendTests(unittest.TestCase):
         assert signal is not None
         self.assertEqual(signal["trend"]["direction"], "down")
         self.assertIn(signal["regime"]["level"], {"medium", "high"})
-        self.assertLess(signal["sell"], signal["sell_band_full"])
+        self.assertLess(signal["exit_price"], signal["sell_band_full"])
 
     def test_flat_market_leaves_sell_band_uncapped(self) -> None:
         now = int(time.time())
@@ -348,7 +352,7 @@ class TrendTests(unittest.TestCase):
 
         assert signal is not None
         self.assertEqual(signal["trend"]["direction"], "flat")
-        self.assertEqual(signal["sell"], signal["sell_band_full"])
+        self.assertEqual(signal["exit_price"], signal["sell_band_full"])
         self.assertNotEqual(signal["regime"]["reason"], "sustained_downtrend")
 
 
@@ -463,8 +467,8 @@ class CrashGuardTests(unittest.TestCase):
         assert signal is not None
         self.assertEqual(signal["regime"]["level"], "high")
         self.assertEqual(signal["regime"]["reason"], "short_window_price_shock")
-        self.assertEqual(signal["sell"], 2575)
-        self.assertLess(signal["sell"], signal["sell_band_full"])
+        self.assertEqual(signal["exit_price"], 2575)
+        self.assertLess(signal["exit_price"], signal["sell_band_full"])
 
 
 class BacktestTimeStopTests(unittest.TestCase):
@@ -495,7 +499,7 @@ class TriageOutlierBidTests(unittest.TestCase):
         return {
             "name": "Extended super antifire(4)",
             "regime": {"level": "low", "reason": "stable_recent_distribution"},
-            "buy": 19000, "buy_band": 20086, "sell": 21391,
+            "entry_price": 19000, "buy_band": 20086, "exit_price": 21391,
             "current_low": 19000, "current_high": current_high,
             "price_fresh": True, "ready_to_buy": False, "ready_to_sell": False,
         }
@@ -1328,19 +1332,20 @@ class ResearchTests(unittest.TestCase):
         sleeper.assert_called_once()  # one polite delay between the two fetches
 
 
-def _sig(iid, score, *, regime="low", buy=100, sell=200, fillable=50, ge_limit=1000):
-    return {"id": iid, "name": f"item{iid}", "buy": buy, "sell": sell,
-            "buy_band": buy,
+def _sig(iid, score, *, regime="low", entry_price=100, exit_price=200, fillable=50, ge_limit=1000):
+    return {"id": iid, "name": f"item{iid}", "entry_price": entry_price, "exit_price": exit_price,
+            "buy_band": entry_price,
             "regime": {"level": regime, "reason": "x"}, "fillable_qty": fillable,
             "fill_window_hours": 4.0, "ge_limit": ge_limit, "score": score,
-            "current_low": buy, "current_high": sell, "price_fresh": True,
+            "current_low": entry_price, "current_high": exit_price, "price_fresh": True,
             "ready_to_buy": True, "patient_probe_ready": False,
             "distance_to_buy_pct": 0.0}
 
 
 def _active_scan():
     return {"candidates": [{
-        "id": 7, "name": "Test gear", "buy": 150_000, "sell": 165_000,
+        "id": 7, "name": "Test gear", "entry_price": 150_000, "exit_price": 165_000,
+        "current_low": 149_999, "current_high": 165_001,
         "net_margin": 11_700, "roi_pct": 7.8, "max_qty": 8,
         "fillable_qty": 8, "expected_value_per_unit": 10_000,
         "high_age_minutes": 1.0, "low_age_minutes": 2.0,
@@ -1380,8 +1385,10 @@ class PlanTests(unittest.TestCase):
         time_scan = {"candidates": [{
             "id": 7,
             "name": "Timed item",
-            "buy": 100,
-            "sell": 120,
+            "entry_price": 100,
+            "exit_price": 120,
+            "current_low": 99,
+            "current_high": 111,
             "ge_limit": 5_000,
             "fillable_qty": 5_000,
             "expected_profit_per_unit": 18,
@@ -1397,6 +1404,9 @@ class PlanTests(unittest.TestCase):
 
         self.assertEqual(p["time_buys"][0]["qty"], 5_000)
         self.assertEqual(p["time_buys"][0]["strategy"], "time-of-day")
+        self.assertEqual(p["time_buys"][0]["live_low"], 99)
+        self.assertEqual(p["time_buys"][0]["live_high"], 111)
+        self.assertIn("| 99/111 |", plan._render_md(p))
         self.assertEqual(p["budget_left_gp"], 500_000)
 
     def test_time_of_day_only_can_use_requested_slots(self) -> None:
@@ -1404,8 +1414,8 @@ class PlanTests(unittest.TestCase):
             {
                 "id": i,
                 "name": f"Timed item {i}",
-                "buy": 100,
-                "sell": 120,
+                "entry_price": 100,
+                "exit_price": 120,
                 "ge_limit": 5_000,
                 "fillable_qty": 1_000,
                 "expected_profit_per_unit": 18,
@@ -1428,8 +1438,8 @@ class PlanTests(unittest.TestCase):
         time_scan = {"candidates": [{
             "id": 7,
             "name": "Slower timed item",
-            "buy": 100,
-            "sell": 120,
+            "entry_price": 100,
+            "exit_price": 120,
             "ge_limit": 5_000,
             "fillable_qty": 5_000,
             "expected_profit_per_unit": 18,
@@ -1442,7 +1452,7 @@ class PlanTests(unittest.TestCase):
         }], "rejected": []}
 
         p = self._plan(
-            [_sig(1, 100, buy=100_000, fillable=9, ge_limit=9)],
+            [_sig(1, 100, entry_price=100_000, fillable=9, ge_limit=9)],
             time_scan=time_scan,
         )
 
@@ -1502,7 +1512,7 @@ class PlanTests(unittest.TestCase):
 
     def test_near_band_candidate_uses_five_percent_probe_cap(self) -> None:
         sig = {
-            **_sig(1, 100, buy=100, fillable=1000),
+            **_sig(1, 100, entry_price=100, fillable=1000),
             "ready_to_buy": False,
             "patient_probe_ready": True,
             "distance_to_buy_pct": 2.0,
@@ -1519,7 +1529,7 @@ class PlanTests(unittest.TestCase):
     def test_probe_only_can_use_requested_slots_within_total_cap(self) -> None:
         sigs = [
             {
-                **_sig(i, 100 - i, buy=100, fillable=250),
+                **_sig(i, 100 - i, entry_price=100, fillable=250),
                 "ready_to_buy": False,
                 "patient_probe_ready": True,
                 "distance_to_buy_pct": 2.0,
@@ -1547,12 +1557,15 @@ class PlanTests(unittest.TestCase):
         self.assertEqual(len(p["active_buys"]), 1)
         self.assertEqual(p["active_buys"][0]["qty"], 6)
         self.assertEqual(p["active_buys"][0]["bucket"], "flip-active")
+        self.assertEqual(p["active_buys"][0]["live_low"], 149_999)
+        self.assertEqual(p["active_buys"][0]["live_high"], 165_001)
+        self.assertIn("| 149,999/165,001 |", plan._render_md(p))
         self.assertEqual(p["slots"]["active_buys"], 1)
 
     def test_strategies_can_select_patient_only(self) -> None:
         active = _active_scan()
         time_scan = {"candidates": [{
-            "id": 8, "name": "Timed item", "buy": 100, "sell": 120,
+            "id": 8, "name": "Timed item", "entry_price": 100, "exit_price": 120,
             "ge_limit": 5_000, "fillable_qty": 5_000,
             "expected_profit_per_unit": 18, "score": 7_500, "hold_hours": 12,
             "entry_window_utc": "00:00-06:00", "exit_window_utc": "12:00-18:00",
@@ -1560,7 +1573,7 @@ class PlanTests(unittest.TestCase):
         }], "rejected": []}
 
         p = self._plan(
-            [_sig(1, 100, buy=100, fillable=50)],
+            [_sig(1, 100, entry_price=100, fillable=50)],
             active=active,
             time_scan=time_scan,
             strategies="patient",
@@ -1588,7 +1601,7 @@ class PlanTests(unittest.TestCase):
         }
 
         p = self._plan(
-            [_sig(1, 100, buy=100, fillable=50)],
+            [_sig(1, 100, entry_price=100, fillable=50)],
             active=active,
             personal=personal,
             strategies="active",
@@ -1600,7 +1613,7 @@ class PlanTests(unittest.TestCase):
 
     def test_conservative_strategies_exclude_patient_probes(self) -> None:
         sig = {
-            **_sig(1, 100, buy=100, fillable=1000),
+            **_sig(1, 100, entry_price=100, fillable=1000),
             "ready_to_buy": False,
             "patient_probe_ready": True,
             "distance_to_buy_pct": 2.0,
@@ -1705,7 +1718,7 @@ class PlanTests(unittest.TestCase):
             "state": "ACTIVE",
         }
         sig = {
-            **_sig(7, 100, buy=9_000_000, sell=9_500_000, fillable=1),
+            **_sig(7, 100, entry_price=9_000_000, exit_price=9_500_000, fillable=1),
             "ready_to_buy": False,
         }
 
@@ -1844,7 +1857,7 @@ class PlanTests(unittest.TestCase):
         self.assertIn("personal FU cap 20", p["buys"][0]["reason"])
 
     def test_offer_triage_reprice_and_cancel(self) -> None:
-        item = lambda i: _sig(i, 100, regime=("high" if i == 9 else "low"), buy=100, sell=200)
+        item = lambda i: _sig(i, 100, regime=("high" if i == 9 else "low"), entry_price=100, exit_price=200)
         offers = [{"id": 1, "side": "buy", "qty": 10, "price": 150},   # far from band 100 -> reprice
                   {"id": 2, "side": "buy", "qty": 10, "price": 100},   # at band -> hold
                   {"id": 9, "side": "buy", "qty": 10, "price": 100}]   # regime high -> cancel
@@ -1872,10 +1885,10 @@ class PlanTests(unittest.TestCase):
 
         def item(i):
             if i == 99:
-                return _sig(i, 100, buy=100, sell=200)
-            return {**_sig(i, 100, buy=100, sell=200), "current_high": 200}
+                return _sig(i, 100, entry_price=100, exit_price=200)
+            return {**_sig(i, 100, entry_price=100, exit_price=200), "current_high": 200}
 
-        p = self._plan([_sig(1, 100, buy=100, fillable=20_000, ge_limit=20_000)],
+        p = self._plan([_sig(1, 100, entry_price=100, fillable=20_000, ge_limit=20_000)],
                        item=item, offers=offers)
 
         self.assertEqual(p["offer_triage"][0]["verdict"], "cancel")
@@ -1884,7 +1897,7 @@ class PlanTests(unittest.TestCase):
         self.assertEqual(p["slots"]["new_buys"], 1)
 
     def test_partially_filled_patient_buy_emits_sell_fill_instruction(self) -> None:
-        sig = {**_sig(1, 100, buy=100, sell=200), "ready_to_buy": False}
+        sig = {**_sig(1, 100, entry_price=100, exit_price=200), "ready_to_buy": False}
         offers = [{"id": 1, "side": "buy", "qty": 10, "filled_qty": 4,
                    "price": 100, "age_hours": 1}]
         p = self._plan([], item=lambda i: sig, offers=offers)
@@ -1928,7 +1941,7 @@ class PlanTests(unittest.TestCase):
         self.assertIn("never reprice upward", row["note"])
 
     def test_filled_and_cancelled_slots_are_collect_actions(self) -> None:
-        item = lambda i: _sig(i, 100, buy=100, sell=200)
+        item = lambda i: _sig(i, 100, entry_price=100, exit_price=200)
         offers = [
             {"id": 1, "side": "buy", "qty": 1984, "filled_qty": 1984,
              "price": 8508, "state": "FILLED"},
@@ -1944,18 +1957,19 @@ class PlanTests(unittest.TestCase):
         self.assertEqual(p["sell_fills"][0]["price"], 200)
 
     def test_markdown_uses_one_stable_action_table(self) -> None:
-        p = self._plan([_sig(1, 100, buy=100, sell=200, fillable=10)])
+        p = self._plan([_sig(1, 100, entry_price=100, exit_price=200, fillable=10)])
         md = plan._render_md(p)
 
         self.assertIn("## Actions", md)
         self.assertIn(
-            "| action | item | qty | price | live low | live high | sell target | deadline | reason |",
+            "| action | item | qty | price | live lo/hi | sell target | deadline | reason |",
             md,
         )
+        self.assertIn("| **buy** | item1 | 10 | 100 | 100/200 | 200 |", md)
         self.assertNotIn("## Buy", md)
 
     def test_stale_sell_reprices_down_to_market(self) -> None:
-        item = lambda i: {**_sig(i, 100, buy=100, sell=250), "current_high": 180}
+        item = lambda i: {**_sig(i, 100, entry_price=100, exit_price=250), "current_high": 180}
         offers = [{"id": 1, "side": "sell", "qty": 10, "price": 220,
                    "age_hours": 6, "filled_qty": 0}]
         p = self._plan([], item=item, offers=offers)
@@ -1965,7 +1979,7 @@ class PlanTests(unittest.TestCase):
         self.assertIn("no fills for 6h", row["note"])
 
     def test_recent_partial_fill_keeps_sell_open(self) -> None:
-        item = lambda i: {**_sig(i, 100, buy=100, sell=250), "current_high": 180}
+        item = lambda i: {**_sig(i, 100, entry_price=100, exit_price=250), "current_high": 180}
         offers = [{
             "id": 1,
             "side": "sell",
@@ -1980,7 +1994,7 @@ class PlanTests(unittest.TestCase):
         self.assertEqual(row["verdict"], "hold")
 
     def test_stale_sell_never_reprices_upward(self) -> None:
-        item = lambda i: {**_sig(i, 100, buy=100, sell=250), "current_high": 240}
+        item = lambda i: {**_sig(i, 100, entry_price=100, exit_price=250), "current_high": 240}
         offers = [{"id": 1, "side": "sell", "qty": 10, "price": 220,
                    "age_hours": 18, "filled_qty": 0}]
         p = self._plan([], item=item, offers=offers)
@@ -1993,7 +2007,7 @@ class PlanTests(unittest.TestCase):
         # Regression: the band-top sell (250) is unreachable when the live bid
         # (current_high) sits below it. A fresh or partially-filled sell must clear
         # at the bid, not chase the band — the keel/vial/antifire failure.
-        item = lambda i: {**_sig(i, 100, buy=100, sell=250), "current_high": 180}
+        item = lambda i: {**_sig(i, 100, entry_price=100, exit_price=250), "current_high": 180}
         offers = [
             {"id": 1, "side": "sell", "qty": 10, "price": 230,        # above bid -> clear down
              "age_hours": 0.7, "filled_qty": 0},
@@ -2031,8 +2045,8 @@ class PlanTests(unittest.TestCase):
                    "new_price": 205, "cost_floor": True}
         self.assertEqual(plan._enforce_fillable(floored, sig), floored)
 
-    def test_triage_rows_carry_live_low_and_high(self) -> None:
-        item = lambda i: {**_sig(i, 100, buy=100, sell=250),
+    def test_triage_rows_carry_live_low_and_high_as_combined_markdown(self) -> None:
+        item = lambda i: {**_sig(i, 100, entry_price=100, exit_price=250),
                           "current_low": 178, "current_high": 180}
         offers = [{"id": 1, "side": "sell", "qty": 10, "price": 220,
                    "age_hours": 6, "filled_qty": 0}]
@@ -2041,10 +2055,10 @@ class PlanTests(unittest.TestCase):
         self.assertEqual(row["live_low"], 178)
         self.assertEqual(row["live_high"], 180)
         md = plan._render_md(p)
-        self.assertIn("| 178 | 180 |", md)
+        self.assertIn("| 178/180 |", md)
 
     def test_floor_age_is_disclosed_in_the_triage_note(self) -> None:
-        item = lambda i: {**_sig(i, 100, buy=100, sell=250), "current_high": 180}
+        item = lambda i: {**_sig(i, 100, entry_price=100, exit_price=250), "current_high": 180}
         offers = [{"id": 1, "side": "sell", "qty": 10, "price": 220,
                    "age_hours": 0.3, "filled_qty": 0, "age_is_floor": True}]
         p = self._plan([], item=item, offers=offers)
@@ -2057,7 +2071,7 @@ class PlanTests(unittest.TestCase):
         # Live bid (180) is below our cost (200): clearing down to it books a loss.
         # But holding a 210 ask when 205 recovers cost is a fantasy ask — lower it
         # to break-even (the cost floor), and quantify the clear-now alternative.
-        item = lambda i: {**_sig(i, 100, buy=100, sell=250),
+        item = lambda i: {**_sig(i, 100, entry_price=100, exit_price=250),
                           "current_high": 180, "trend": {"direction": "flat"}}
         offers = [{"id": 1, "side": "sell", "qty": 10, "price": 210,
                    "age_hours": 1, "filled_qty": 0}]
@@ -2072,7 +2086,7 @@ class PlanTests(unittest.TestCase):
     def test_below_cost_sell_already_at_break_even_holds(self) -> None:
         # Ask (205) already sits at the cost floor; there is nothing better to post,
         # so hold — the clear-now alternative stays quantified in the note.
-        item = lambda i: {**_sig(i, 100, buy=100, sell=250),
+        item = lambda i: {**_sig(i, 100, entry_price=100, exit_price=250),
                           "current_high": 180, "trend": {"direction": "flat"}}
         offers = [{"id": 1, "side": "sell", "qty": 10, "price": 205,
                    "age_hours": 1, "filled_qty": 0}]
@@ -2084,7 +2098,7 @@ class PlanTests(unittest.TestCase):
         self.assertIn("clear now at bid 180", row["note"])
 
     def test_below_cost_sell_clears_at_the_hard_12h_stop(self) -> None:
-        item = lambda i: {**_sig(i, 100, buy=100, sell=250),
+        item = lambda i: {**_sig(i, 100, entry_price=100, exit_price=250),
                           "current_high": 180, "trend": {"direction": "flat"}}
         offers = [{"id": 1, "side": "sell", "qty": 10, "price": 210,
                    "age_hours": 12, "filled_qty": 0}]
@@ -2097,7 +2111,7 @@ class PlanTests(unittest.TestCase):
     def test_above_cost_sell_still_clears_to_market(self) -> None:
         # Cost (150) below the bid (180): clearing is profitable, so the guard stays out
         # of the way and the clamp-to-bid reprice proceeds.
-        item = lambda i: {**_sig(i, 100, buy=100, sell=250),
+        item = lambda i: {**_sig(i, 100, entry_price=100, exit_price=250),
                           "current_high": 180, "trend": {"direction": "flat"}}
         offers = [{"id": 1, "side": "sell", "qty": 10, "price": 230,
                    "age_hours": 1, "filled_qty": 0}]
@@ -2107,13 +2121,13 @@ class PlanTests(unittest.TestCase):
         self.assertEqual(row["new_price"], 180)
 
     def test_members_slots_allow_eight_offers(self) -> None:
-        sigs = [_sig(i, 100 - i, buy=100, fillable=10) for i in range(1, 9)]
+        sigs = [_sig(i, 100 - i, entry_price=100, fillable=10) for i in range(1, 9)]
         p = self._plan(sigs)
         self.assertEqual(len(p["buys"]), 8)
         self.assertEqual(p["slots"]["max"], 8)
 
     def test_max_new_slots_caps_new_recommendations(self) -> None:
-        sigs = [_sig(i, 100 - i, buy=100, fillable=10) for i in range(1, 9)]
+        sigs = [_sig(i, 100 - i, entry_price=100, fillable=10) for i in range(1, 9)]
         p = self._plan(sigs, max_new_slots=2)
         self.assertEqual(len(p["buys"]), 2)
         self.assertEqual(p["slots"]["new_slot_cap"], 2)
@@ -2123,8 +2137,8 @@ class PlanTests(unittest.TestCase):
             {
                 "id": i,
                 "name": f"gear{i}",
-                "buy": 100_000,
-                "sell": 110_000,
+                "entry_price": 100_000,
+                "exit_price": 110_000,
                 "net_margin": 7_800,
                 "roi_pct": 7.8,
                 "max_qty": 1,
@@ -2147,7 +2161,7 @@ class PlanTests(unittest.TestCase):
 
     def test_deployment_uses_full_liquid(self) -> None:
         p = self._plan([
-            _sig(1, 100, buy=100, fillable=20_000, ge_limit=20_000),
+            _sig(1, 100, entry_price=100, fillable=20_000, ge_limit=20_000),
         ])
 
         self.assertEqual(p["inputs"]["liquid_gp"], 1_000_000)
@@ -2158,7 +2172,7 @@ class PlanTests(unittest.TestCase):
         self.assertIsNone(p["deployment"]["constraint"])
 
     def test_deployment_shortfall_reports_constraint_without_weak_trade(self) -> None:
-        p = self._plan([_sig(1, 100, buy=100, fillable=50)])
+        p = self._plan([_sig(1, 100, entry_price=100, fillable=50)])
 
         self.assertEqual(p["deployment"]["planned_gp"], 5_000)
         self.assertGreater(p["deployment"]["unspent_gp"], 0)
