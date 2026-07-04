@@ -37,9 +37,9 @@ You need Git, [`uv`](https://docs.astral.sh/uv/), and a coding agent that suppor
 
 3. **Open this repo in your agent and run `/setup`.** It verifies the plugin wiring and asks
    only for what defaults can't infer: a contact for the OSRS Wiki user-agent, your RSN if you
-   have more than one RuneLite profile, and which subreddits the optional research pass reads.
-   Answers land in gitignored `config/settings.json`; with one profile and default picks, no
-   config is needed at all.
+   have more than one RuneLite profile, and any subreddits you want the optional research pass
+   to read. Answers land in gitignored `config/settings.json`; with one profile and no Reddit
+   sources selected, no config is needed at all.
 
 Then just talk to it: *"50m liquid, what should I buy?"*
 
