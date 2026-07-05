@@ -49,13 +49,13 @@ If your message doesn't include the numbers, the agent asks: liquid GP, whether 
 around, which strategies, and slot cap. A plan looks like this:
 
 
-| action | item             | qty | price      | live lo/hi            | sell target | deadline               | reason                                         |
-| ------ | ---------------- | --- | ---------- | --------------------- | ----------- | ---------------------- | ---------------------------------------------- |
-| buy    | Topaz amulet (u) | 439 | 3,153      | 3,153/3,300           | 3,293       | 2026-07-05T19:43+00:00 | time-of-day pattern; cancel zero-fill after 6h |
-| buy    | Virtus robe top  | 1   | 37,484,645 | 37,484,644/38,850,000 | 38,849,999  | 2026-07-04T21:13+00:00 | active margin; cancel unfilled after 30m       |
+| action | item             | qty | price      | capital    | exp. profit | live lo/hi            | sell target | deadline               | reason                                         |
+| ------ | ---------------- | --- | ---------- | ---------- | ----------- | --------------------- | ----------- | ---------------------- | ---------------------------------------------- |
+| buy    | Topaz amulet (u) | 439 | 3,153      | 1,384,167  | 61,240      | 3,153/3,300           | 3,293       | 2026-07-05T19:43+00:00 | time-of-day pattern; cancel zero-fill after 6h |
+| buy    | Virtus robe top  | 1   | 37,484,645 | 37,484,645 | 1,167,357   | 37,484,644/38,850,000 | 38,849,999  | 2026-07-04T21:13+00:00 | active margin; cancel unfilled after 30m       |
 
 
-Every row includes the latest instant-sell/instant-buy prices (`live lo/hi`) so you can sanity check the call before placing it.
+Every row includes the latest instant-sell/instant-buy prices (`live lo/hi`) plus the gp the offer commits (`capital`) and its expected after-tax profit, so you can sanity check the call before placing it.
 
 ## How it decides
 

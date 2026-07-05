@@ -74,6 +74,14 @@ class SignalTests(unittest.TestCase):
         # thinner side (10/h) * 4h window * 0.10 participation = 4
         self.assertEqual(signals._fillable_qty(1000, volume, signals.FILL_WINDOW_HOURS), 4)
 
+    def test_exit_capacity_uses_sell_side_flow_over_the_exit_window(self) -> None:
+        volume = {"low": 1000, "high": 10, "total": 1010}
+
+        # sell side (10/h) * 12h exit window * 0.10 participation = 12, GE limit caps at 1000
+        self.assertEqual(signals._exit_capacity_qty(1000, volume, 12, 0.10), 12)
+        # GE limit binds when the sell side is deep
+        self.assertEqual(signals._exit_capacity_qty(5, volume, 12, 0.10), 5)
+
     def test_scan_zero_seed_limit_scans_all_and_forwards_fill_window(self) -> None:
         with (
             patch("flipper.signals.prices.margins", return_value=[{"id": 1, "score": 1}]) as margins,
@@ -1332,10 +1340,12 @@ class ResearchTests(unittest.TestCase):
         sleeper.assert_called_once()  # one polite delay between the two fetches
 
 
-def _sig(iid, score, *, regime="low", entry_price=100, exit_price=200, fillable=50, ge_limit=1000):
+def _sig(iid, score, *, regime="low", entry_price=100, exit_price=200, fillable=50, ge_limit=1000,
+         exit_capacity=0):
     return {"id": iid, "name": f"item{iid}", "entry_price": entry_price, "exit_price": exit_price,
             "buy_band": entry_price,
             "regime": {"level": regime, "reason": "x"}, "fillable_qty": fillable,
+            "exit_capacity_qty": exit_capacity,
             "fill_window_hours": 4.0, "ge_limit": ge_limit, "score": score,
             "current_low": entry_price, "current_high": exit_price, "price_fresh": True,
             "ready_to_buy": True, "patient_probe_ready": False,
@@ -1454,11 +1464,74 @@ class PlanTests(unittest.TestCase):
         p = self._plan(
             [_sig(1, 100, entry_price=100_000, fillable=9, ge_limit=9)],
             time_scan=time_scan,
+            # enough per-unit edge to clear the capital-return floor on 900k locked
+            bt=lambda i: {**_bt(), "avg_profit_per_unit": 1_000},
         )
 
         self.assertEqual(p["buys"][0]["qty"], 9)
         self.assertEqual(p["time_buys"][0]["qty"], 1_000)
         self.assertEqual(p["budget_left_gp"], 0)
+
+    def test_patient_order_size_scales_to_exit_capacity_with_ev_on_expected_fills(self) -> None:
+        # Cheap item: post what the sell side can absorb, but expected profit and the
+        # capital floor stay anchored to the conservative expected-fill estimate.
+        p = self._plan([_sig(1, 100, fillable=10, exit_capacity=500)])
+
+        self.assertEqual(p["buys"][0]["qty"], 500)
+        self.assertEqual(p["buys"][0]["expected_profit"], 1_000)  # 100/u * 10 expected fills
+
+    def test_time_lane_posts_exit_capacity_but_keeps_ev_on_expected_fills(self) -> None:
+        time_scan = {"candidates": [{
+            "id": 7,
+            "name": "Cheap tabs",
+            "entry_price": 100,
+            "exit_price": 130,
+            "ge_limit": 10_000,
+            "fillable_qty": 60,
+            "exit_capacity_qty": 2_000,
+            "expected_profit_per_unit": 20,
+            "score": 100,
+            "hold_hours": 12,
+            "entry_window_utc": "00:00-06:00",
+            "exit_window_utc": "12:00-18:00",
+            "train": {"trades": 20, "win_rate": 0.7, "median_profit_per_unit": 15},
+            "test": {"trades": 10, "win_rate": 0.6, "median_profit_per_unit": 12},
+        }], "rejected": []}
+
+        p = self._plan([], time_scan=time_scan)
+
+        self.assertEqual(p["time_buys"][0]["qty"], 2_000)
+        self.assertEqual(p["time_buys"][0]["expected_profit"], 1_200)  # 20/u * 60 expected fills
+        self.assertEqual(p["budget_left_gp"], 800_000)
+
+    def test_capital_floor_rejects_high_capital_low_ev_slot(self) -> None:
+        # Tome-of-fire shape: one expensive unit whose EV is fine against the flat floor
+        # (200gp at 1m liquid) but poor for the capital it commits for up to 24h.
+        time_scan = {"candidates": [{
+            "id": 8,
+            "name": "Expensive tome",
+            "entry_price": 100_000,
+            "exit_price": 101_000,
+            "ge_limit": 8,
+            "fillable_qty": 1,
+            "exit_capacity_qty": 1,
+            "expected_profit_per_unit": 550,
+            "score": 50,
+            "hold_hours": 6,
+            "entry_window_utc": "06:00-12:00",
+            "exit_window_utc": "12:00-18:00",
+            "train": {"trades": 20, "win_rate": 0.7, "median_profit_per_unit": 500},
+            "test": {"trades": 10, "win_rate": 0.6, "median_profit_per_unit": 450},
+        }], "rejected": []}
+
+        p = self._plan([], time_scan=time_scan)
+
+        self.assertEqual(p["time_buys"], [])
+        # 100,000gp * 24h * 0.0005 = 1,200gp capital floor beats the 550gp EV
+        self.assertIn(
+            "expected profit 550gp < floor 1,200gp (100,000gp committed ≤24h)",
+            p["time_skipped"][0]["reason"],
+        )
 
     def test_survival_gate_and_avoid_drop(self) -> None:
         sigs = [_sig(1, 100), _sig(2, 50)]
@@ -1962,10 +2035,10 @@ class PlanTests(unittest.TestCase):
 
         self.assertIn("## Actions", md)
         self.assertIn(
-            "| action | item | qty | price | live lo/hi | sell target | deadline | reason |",
+            "| action | item | qty | price | capital | exp. profit | live lo/hi | sell target | deadline | reason |",
             md,
         )
-        self.assertIn("| **buy** | item1 | 10 | 100 | 100/200 | 200 |", md)
+        self.assertIn("| **buy** | item1 | 10 | 100 | 1,000 | 1,000 | 100/200 | 200 |", md)
         self.assertNotIn("## Buy", md)
 
     def test_stale_sell_reprices_down_to_market(self) -> None:
@@ -2177,6 +2250,36 @@ class PlanTests(unittest.TestCase):
         self.assertEqual(p["deployment"]["planned_gp"], 5_000)
         self.assertGreater(p["deployment"]["unspent_gp"], 0)
         self.assertIsNotNone(p["deployment"]["constraint"])
+
+    def test_held_buy_escrow_is_reported_not_counted_as_deployment(self) -> None:
+        # A fresh high-value untracked buy triages to hold; its 2m escrow was spent by a
+        # previous run and must not push utilization of today's 1m liquid past 100%.
+        held_buy = {"id": 9, "side": "buy", "qty": 1, "filled_qty": 0,
+                    "price": 2_000_000, "age_hours": 0.1, "state": "ACTIVE"}
+        p = self._plan(
+            [_sig(1, 100, entry_price=100, fillable=20_000, ge_limit=20_000)],
+            offers=[held_buy],
+        )
+
+        self.assertEqual(p["deployment"]["planned_gp"], 1_000_000)
+        self.assertEqual(p["deployment"]["utilization_pct"], 100.0)
+        self.assertEqual(p["deployment"]["held_buy_gp"], 2_000_000)
+        self.assertIn("2,000,000gp already escrowed in held buys", plan._render_md(p))
+
+    def test_collected_sell_proceeds_are_spendable_this_run(self) -> None:
+        # A filled-but-uncollected sell frees its after-tax proceeds when the plan's own
+        # collect instruction runs, so the budget and utilization base include them.
+        filled_sell = {"id": 5, "side": "sell", "qty": 10, "filled_qty": 10,
+                       "price": 1_000, "state": "FILLED"}
+        p = self._plan(
+            [_sig(1, 100, entry_price=100, fillable=20_000, ge_limit=20_000)],
+            offers=[filled_sell],
+        )
+
+        self.assertEqual(p["projection"]["released_sell_gp"], 9_800)  # 10 * (1000 - 2% tax)
+        self.assertEqual(p["deployment"]["available_gp"], 1_009_800)
+        self.assertEqual(p["buys"][0]["qty"], 10_098)
+        self.assertEqual(p["deployment"]["utilization_pct"], 100.0)
 
     def test_cash_is_required(self) -> None:
         with self.assertRaisesRegex(ValueError, "cash is required"):
