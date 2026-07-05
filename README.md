@@ -27,7 +27,7 @@ You need Git, [uv](https://docs.astral.sh/uv/) and a coding agent unless you wan
   ```
 2. **Install the RuneLite plugin fork** —
   [sasoder/rl-plugin](https://github.com/sasoder/rl-plugin). The stock Flipping Utilities doesn't export current GE slots or consume intent tags, and without those the planner can't see your open offers or connect fills back to its calls. Build and install it, then enable auto-save (1 minute interval) and "Export current GE slots" (the fork's [Merch harness integration](https://github.com/sasoder/rl-plugin#merch-harness-integration) section has screenshots of both settings).
-3. **Open Evidence-Based OSRS Flipper in your agent and run `/setup`.** It checks that the
+3. **Open the repo in your agent and run `/setup`.** It checks that the
   plugin is exporting data, then asks only for the OSRS Wiki contact, your RSN (if you have more
   than one RuneLite profile), and any subreddits you want the optional research pass to read.
   Answers go into gitignored `config/settings.json`. With one profile and no Reddit sources, no
@@ -98,7 +98,7 @@ Your exports and local state stay on disk and out of git:
 `data/incoming/flipping/`, `data/incoming/ge-slots/`, `state/offer_ages.json`,
 `state/offer_fills.json`.
 
-## Why "Evidence-Based OSRS Flipper"?
+## Why "Evidence"?
 
 Evidence is my RSN, the suggestions are evidence-based, and OSRS Flipper says exactly what the
 tool is for. A week of following the calls on around 85m liquid returned about 16m, which would
