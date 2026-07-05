@@ -28,7 +28,7 @@ the README's "RuneLite plugin" section covers building and installing it. Verify
 
 ```bash
 scripts/runelite-sync.sh
-uv run python -m merch.runelite offers
+uv run python -m flipper.runelite offers
 ```
 
 With the game open, offers (or `[]` on empty slots) should print. If the export is missing or

@@ -10,9 +10,9 @@ rate). `research.subreddit` may be one name or a list; results are merged. RSS o
 score/comments — titles are the catalyst signal, which is all this gather needs.
 
 CLI:
-    python -m merch.research brief      # compact digest across all sources
-    python -m merch.research news
-    python -m merch.research reddit
+    python -m flipper.research brief      # compact digest across all sources
+    python -m flipper.research news
+    python -m flipper.research reddit
 """
 
 from __future__ import annotations
@@ -168,7 +168,7 @@ def brief() -> dict:
 
 
 def _main(argv: list[str]) -> int:
-    ap = argparse.ArgumentParser(prog="merch.research")
+    ap = argparse.ArgumentParser(prog="flipper.research")
     ap.add_argument("cmd", choices=["brief", "news", "reddit"], nargs="?", default="brief")
     args = ap.parse_args(argv)
     out = {"brief": brief, "news": news, "reddit": reddit}[args.cmd]()

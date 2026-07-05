@@ -1,7 +1,7 @@
 [project]
-name = "merch"
+name = "evidence-based-osrs-flipper"
 version = "0.1.0"
-description = "On-demand OSRS Grand Exchange merchanting analyst"
+description = "Evidence-Based OSRS Flipper: an on-demand OSRS Grand Exchange flipping advisor"
 requires-python = ">=3.11"
 dependencies = []
 

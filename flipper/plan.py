@@ -1,6 +1,6 @@
 """Deterministic planner: turn signals + budget + your open offers into a final instruction
 table. **Zero LLM tokens** — selection, the survival gate, offer triage, sizing, reasons and
-predictions are all mechanical. The only LLM step in a session is `merch.research`, which produces
+predictions are all mechanical. The only LLM step in a session is `flipper.research`, which produces
 a small boost/avoid overlay that this planner consumes; see AGENTS.md.
 
 Pipeline:
@@ -11,7 +11,7 @@ Pipeline:
   4. size survivors to fillable_qty / budget / GE limit across the free GE slots.
 
 CLI:
-    python -m merch.plan --cash 76000000 \
+    python -m flipper.plan --cash 76000000 \
         --offers '[{"id":11212,"side":"sell","qty":11000,"price":3390}]' \
         [--overlay overlay.json] [--markdown]
 """
@@ -1158,7 +1158,7 @@ def _render_md(p: dict) -> str:
 
 
 def _main(argv: list[str]) -> int:
-    ap = argparse.ArgumentParser(prog="merch.plan")
+    ap = argparse.ArgumentParser(prog="flipper.plan")
     ap.add_argument("--cash", type=int, required=True, help="liquid gp to size against")
     ap.add_argument(
         "--offers",

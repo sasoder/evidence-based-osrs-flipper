@@ -1,6 +1,6 @@
 # Research overlay playbook
 
-Optional slow path for `/flip` (or any agent harness driving `merch.plan`). Run it only when the
+Optional slow path for `/flip` (or any agent harness driving `flipper.plan`). Run it only when the
 user explicitly asks for research/catalysts/news, or the request is clearly about a current
 event. Otherwise skip it; it usually adds latency and often produces no overlay.
 
@@ -9,8 +9,8 @@ event. Otherwise skip it; it usually adds latency and often produces no overlay.
 First run the normal planner JSON and the research brief:
 
 ```bash
-uv run python -m merch.plan --cash <liquid_gp>
-uv run python -m merch.research brief
+uv run python -m flipper.plan --cash <liquid_gp>
+uv run python -m flipper.research brief
 ```
 
 Read only two things: the `research brief` digest, and the candidate *names/ids* from the
@@ -27,7 +27,7 @@ If research surfaces nothing actionable, stop and run the normal one-shot final 
 an overlay. If there is an actionable overlay, run the final deterministic plan once with it:
 
 ```bash
-uv run python -m merch.plan --cash <liquid_gp> \
+uv run python -m flipper.plan --cash <liquid_gp> \
     --overlay overlay.json --write-intents --markdown
 ```
 

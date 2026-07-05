@@ -12,7 +12,7 @@ from unittest.mock import patch
 
 import urllib.error
 
-from merch import intents, plan, prices, research, runelite, signals
+from flipper import intents, plan, prices, research, runelite, signals
 
 # Fixture exports are always written and read under this name; tests must not
 # depend on the machine-local config/settings.json rsn.
@@ -31,7 +31,7 @@ class TimeseriesMemoTests(unittest.TestCase):
             calls.append((item_id, timestep))
             return [{"timestamp": 0, "id": item_id, "step": timestep}]
 
-        with patch("merch.prices._fetch_timeseries", side_effect=fake_fetch):
+        with patch("flipper.prices._fetch_timeseries", side_effect=fake_fetch):
             prices.prefetch_timeseries([1, 2], ("1h", "6h"))
             # Every (item, timestep) pair fetched exactly once, concurrently.
             self.assertEqual(sorted(calls), [(1, "1h"), (1, "6h"), (2, "1h"), (2, "6h")])
@@ -42,7 +42,7 @@ class TimeseriesMemoTests(unittest.TestCase):
             self.assertEqual(len(calls), 4)
 
     def test_timeseries_falls_back_to_single_fetch_when_not_prefetched(self) -> None:
-        with patch("merch.prices._fetch_timeseries",
+        with patch("flipper.prices._fetch_timeseries",
                    return_value=[{"timestamp": 0}]) as fetch:
             self.assertEqual(prices.timeseries(99, "1h"), [{"timestamp": 0}])
             prices.timeseries(99, "1h")  # second read is memoized
@@ -76,9 +76,9 @@ class SignalTests(unittest.TestCase):
 
     def test_scan_zero_seed_limit_scans_all_and_forwards_fill_window(self) -> None:
         with (
-            patch("merch.signals.prices.margins", return_value=[{"id": 1, "score": 1}]) as margins,
-            patch("merch.signals.prices.prefetch_timeseries") as prefetch,
-            patch("merch.signals.item_signal", return_value={"id": 1, "score": 1}) as item_signal,
+            patch("flipper.signals.prices.margins", return_value=[{"id": 1, "score": 1}]) as margins,
+            patch("flipper.signals.prices.prefetch_timeseries") as prefetch,
+            patch("flipper.signals.item_signal", return_value={"id": 1, "score": 1}) as item_signal,
         ):
             rows = signals.scan(seed_limit=0, limit=None, fill_window_hours=12)
 
@@ -99,10 +99,10 @@ class SignalTests(unittest.TestCase):
         }
 
         with (
-            patch("merch.prices.mapping_by_id", return_value={1: {"id": 1, "name": "Test item", "limit": 100}}),
-            patch("merch.prices.timeseries", return_value=_rows()),
-            patch("merch.prices.latest", return_value=latest),
-            patch("merch.prices.one_hour", return_value={"1": {"lowPriceVolume": 100, "highPriceVolume": 100}}),
+            patch("flipper.prices.mapping_by_id", return_value={1: {"id": 1, "name": "Test item", "limit": 100}}),
+            patch("flipper.prices.timeseries", return_value=_rows()),
+            patch("flipper.prices.latest", return_value=latest),
+            patch("flipper.prices.one_hour", return_value={"1": {"lowPriceVolume": 100, "highPriceVolume": 100}}),
         ):
             signal = signals.item_signal(1)
 
@@ -114,12 +114,12 @@ class SignalTests(unittest.TestCase):
     def test_ready_entry_uses_the_live_low_not_the_historical_band(self) -> None:
         now = int(time.time())
         with (
-            patch("merch.prices.mapping_by_id", return_value={1: {"id": 1, "name": "Test item", "limit": 100}}),
-            patch("merch.prices.timeseries", return_value=_rows()),
-            patch("merch.prices.latest", return_value={
+            patch("flipper.prices.mapping_by_id", return_value={1: {"id": 1, "name": "Test item", "limit": 100}}),
+            patch("flipper.prices.timeseries", return_value=_rows()),
+            patch("flipper.prices.latest", return_value={
                 "1": {"low": 90, "high": 200, "lowTime": now, "highTime": now}
             }),
-            patch("merch.prices.one_hour", return_value={
+            patch("flipper.prices.one_hour", return_value={
                 "1": {"lowPriceVolume": 100, "highPriceVolume": 100}
             }),
         ):
@@ -135,12 +135,12 @@ class SignalTests(unittest.TestCase):
         # recently traded, so production stays blocked while the experimental probe strategy may bid.
         now = int(time.time())
         with (
-            patch("merch.prices.mapping_by_id", return_value={1: {"id": 1, "name": "Test item", "limit": 100}}),
-            patch("merch.prices.timeseries", return_value=_rows()),
-            patch("merch.prices.latest", return_value={
+            patch("flipper.prices.mapping_by_id", return_value={1: {"id": 1, "name": "Test item", "limit": 100}}),
+            patch("flipper.prices.timeseries", return_value=_rows()),
+            patch("flipper.prices.latest", return_value={
                 "1": {"low": 102, "high": 200, "lowTime": now, "highTime": now}
             }),
-            patch("merch.prices.one_hour", return_value={
+            patch("flipper.prices.one_hour", return_value={
                 "1": {"lowPriceVolume": 100, "highPriceVolume": 100}
             }),
         ):
@@ -156,12 +156,12 @@ class SignalTests(unittest.TestCase):
         # Live low 120 is 20% above the band — the bid would never fill in the window. Not ready.
         now = int(time.time())
         with (
-            patch("merch.prices.mapping_by_id", return_value={1: {"id": 1, "name": "Test item", "limit": 100}}),
-            patch("merch.prices.timeseries", return_value=_rows()),
-            patch("merch.prices.latest", return_value={
+            patch("flipper.prices.mapping_by_id", return_value={1: {"id": 1, "name": "Test item", "limit": 100}}),
+            patch("flipper.prices.timeseries", return_value=_rows()),
+            patch("flipper.prices.latest", return_value={
                 "1": {"low": 120, "high": 200, "lowTime": now, "highTime": now}
             }),
-            patch("merch.prices.one_hour", return_value={
+            patch("flipper.prices.one_hour", return_value={
                 "1": {"lowPriceVolume": 100, "highPriceVolume": 100}
             }),
         ):
@@ -178,19 +178,19 @@ class SignalTests(unittest.TestCase):
             row["avgLowPrice"] = 10_000_000
             row["avgHighPrice"] = 10_300_000
         with (
-            patch("merch.prices.margins", return_value=[{
+            patch("flipper.prices.margins", return_value=[{
                 "id": 1, "name": "Test gear", "buy": 10_000_000, "sell": 10_300_000,
                 "margin": 94_000, "ge_limit": 8, "vol_1h": 10, "potential_1h": 752_000,
             }]),
-            patch("merch.prices.latest", return_value={
+            patch("flipper.prices.latest", return_value={
                 "1": {"low": 10_000_000, "high": 10_300_000,
                       "lowTime": now, "highTime": now}
             }),
-            patch("merch.prices.one_hour", return_value={
+            patch("flipper.prices.one_hour", return_value={
                 "1": {"lowPriceVolume": 5, "highPriceVolume": 5}
             }),
-            patch("merch.prices.timeseries", return_value=stable),
-            patch("merch.prices.prefetch_timeseries"),
+            patch("flipper.prices.timeseries", return_value=stable),
+            patch("flipper.prices.prefetch_timeseries"),
         ):
             result = signals.active_margin_scan()
 
@@ -209,15 +209,15 @@ class SignalTests(unittest.TestCase):
     def test_active_margin_scan_rejects_stale_quote(self) -> None:
         now = int(time.time())
         with (
-            patch("merch.prices.margins", return_value=[{
+            patch("flipper.prices.margins", return_value=[{
                 "id": 1, "name": "Test gear", "buy": 10_000_000, "sell": 10_300_000,
                 "margin": 94_000, "ge_limit": 8, "vol_1h": 10, "potential_1h": 752_000,
             }]),
-            patch("merch.prices.latest", return_value={
+            patch("flipper.prices.latest", return_value={
                 "1": {"low": 10_000_000, "high": 10_300_000,
                       "lowTime": now - 1260, "highTime": now}
             }),
-            patch("merch.prices.prefetch_timeseries"),
+            patch("flipper.prices.prefetch_timeseries"),
         ):
             result = signals.active_margin_scan()
 
@@ -229,11 +229,11 @@ class SignalTests(unittest.TestCase):
 
     def test_active_margin_scan_requires_ge_limit(self) -> None:
         with (
-            patch("merch.prices.margins", return_value=[{
+            patch("flipper.prices.margins", return_value=[{
                 "id": 1, "name": "Unknown limit gear", "buy": 10_000_000, "sell": 10_300_000,
                 "margin": 94_000, "ge_limit": None, "vol_1h": 10, "potential_1h": 0,
             }]),
-            patch("merch.prices.prefetch_timeseries"),
+            patch("flipper.prices.prefetch_timeseries"),
         ):
             result = signals.active_margin_scan()
 
@@ -261,13 +261,13 @@ class SignalTests(unittest.TestCase):
 
         now = int(time.time())
         with (
-            patch("merch.prices.mapping_by_id",
+            patch("flipper.prices.mapping_by_id",
                   return_value={1: {"id": 1, "name": "Timed item", "limit": 5_000}}),
-            patch("merch.prices.timeseries", return_value=rows),
-            patch("merch.prices.latest", return_value={
+            patch("flipper.prices.timeseries", return_value=rows),
+            patch("flipper.prices.latest", return_value={
                 "1": {"low": 100, "high": 111, "lowTime": now, "highTime": now}
             }),
-            patch("merch.prices.one_hour", return_value={
+            patch("flipper.prices.one_hour", return_value={
                 "1": {"lowPriceVolume": 10_000, "highPriceVolume": 10_000}
             }),
         ):
@@ -328,10 +328,10 @@ class TrendTests(unittest.TestCase):
     def test_downtrend_elevates_regime_and_caps_sell(self) -> None:
         now = int(time.time())
         with (
-            patch("merch.prices.mapping_by_id", return_value={1: {"id": 1, "name": "Bleeder", "limit": 100}}),
-            patch("merch.prices.timeseries", return_value=_trend_rows(2400, 1800)),
-            patch("merch.prices.latest", return_value={"1": {"low": 1780, "high": 1820, "lowTime": now, "highTime": now}}),
-            patch("merch.prices.one_hour", return_value={"1": {"lowPriceVolume": 100, "highPriceVolume": 100}}),
+            patch("flipper.prices.mapping_by_id", return_value={1: {"id": 1, "name": "Bleeder", "limit": 100}}),
+            patch("flipper.prices.timeseries", return_value=_trend_rows(2400, 1800)),
+            patch("flipper.prices.latest", return_value={"1": {"low": 1780, "high": 1820, "lowTime": now, "highTime": now}}),
+            patch("flipper.prices.one_hour", return_value={"1": {"lowPriceVolume": 100, "highPriceVolume": 100}}),
         ):
             signal = signals.item_signal(1)
 
@@ -343,10 +343,10 @@ class TrendTests(unittest.TestCase):
     def test_flat_market_leaves_sell_band_uncapped(self) -> None:
         now = int(time.time())
         with (
-            patch("merch.prices.mapping_by_id", return_value={1: {"id": 1, "name": "Stable", "limit": 100}}),
-            patch("merch.prices.timeseries", return_value=_trend_rows(2000, 2000, spread=80)),
-            patch("merch.prices.latest", return_value={"1": {"low": 1925, "high": 2075, "lowTime": now, "highTime": now}}),
-            patch("merch.prices.one_hour", return_value={"1": {"lowPriceVolume": 100, "highPriceVolume": 100}}),
+            patch("flipper.prices.mapping_by_id", return_value={1: {"id": 1, "name": "Stable", "limit": 100}}),
+            patch("flipper.prices.timeseries", return_value=_trend_rows(2000, 2000, spread=80)),
+            patch("flipper.prices.latest", return_value={"1": {"low": 1925, "high": 2075, "lowTime": now, "highTime": now}}),
+            patch("flipper.prices.one_hour", return_value={"1": {"lowPriceVolume": 100, "highPriceVolume": 100}}),
         ):
             signal = signals.item_signal(1)
 
@@ -436,13 +436,13 @@ class CrashGuardTests(unittest.TestCase):
     def test_item_signal_drops_the_crash_item_without_an_evidenced_exit(self) -> None:
         now = int(time.time())
         with (
-            patch("merch.prices.mapping_by_id",
+            patch("flipper.prices.mapping_by_id",
                   return_value={1: {"id": 1, "name": "Crasher", "limit": 11000}}),
-            patch("merch.prices.timeseries", return_value=_crash_rows()),
-            patch("merch.prices.latest", return_value={
+            patch("flipper.prices.timeseries", return_value=_crash_rows()),
+            patch("flipper.prices.latest", return_value={
                 "1": {"low": 1900, "high": 2000, "lowTime": now, "highTime": now}
             }),
-            patch("merch.prices.one_hour", return_value={
+            patch("flipper.prices.one_hour", return_value={
                 "1": {"lowPriceVolume": 800, "highPriceVolume": 0}
             }),
         ):
@@ -452,13 +452,13 @@ class CrashGuardTests(unittest.TestCase):
         now = int(time.time())
         highs = [(None, 0)] * 6 + [(2044, 2), (2575, 1992)]
         with (
-            patch("merch.prices.mapping_by_id",
+            patch("flipper.prices.mapping_by_id",
                   return_value={1: {"id": 1, "name": "Crasher", "limit": 11000}}),
-            patch("merch.prices.timeseries", return_value=_crash_rows(crash_highs=highs)),
-            patch("merch.prices.latest", return_value={
+            patch("flipper.prices.timeseries", return_value=_crash_rows(crash_highs=highs)),
+            patch("flipper.prices.latest", return_value={
                 "1": {"low": 1900, "high": 2000, "lowTime": now, "highTime": now}
             }),
-            patch("merch.prices.one_hour", return_value={
+            patch("flipper.prices.one_hour", return_value={
                 "1": {"lowPriceVolume": 800, "highPriceVolume": 400}
             }),
         ):
@@ -476,9 +476,9 @@ class BacktestTimeStopTests(unittest.TestCase):
         # A steady downtrend: a buy near the end never recovers to its sell band.
         rows = _trend_rows(2400, 1600, n=120, spread=60)
         with (
-            patch("merch.prices.mapping_by_id",
+            patch("flipper.prices.mapping_by_id",
                   return_value={1: {"id": 1, "name": "Bleeder", "limit": 100}}),
-            patch("merch.prices.timeseries", return_value=rows),
+            patch("flipper.prices.timeseries", return_value=rows),
         ):
             hold_forever = signals.backtest_signal(1, max_hold_points=None)
             time_stopped = signals.backtest_signal(1, max_hold_points=4)
@@ -536,7 +536,7 @@ class CostBasisTests(unittest.TestCase):
             # a pure sell record (no buy price) is skipped
             {"id": 3, "bought": 0, "bought_qty": 0, "sold_qty": 10},
         ]
-        with patch("merch.plan.runelite.read_flips", return_value=flips):
+        with patch("flipper.plan.runelite.read_flips", return_value=flips):
             self.assertEqual(plan._cost_basis(), {1: 230})
 
 
@@ -1026,10 +1026,10 @@ class OpenOfferContractTests(unittest.TestCase):
         # Patch every data source: this must fail on the offer contract, not on
         # whatever FU exports / price cache happen to exist on this machine.
         with (
-            patch("merch.plan.signals.item_signal", return_value=None),
-            patch("merch.plan.signals.live_quote", return_value=None),
-            patch("merch.plan._cost_basis", return_value={}),
-            patch("merch.plan._personal_execution_stats", return_value={}),
+            patch("flipper.plan.signals.item_signal", return_value=None),
+            patch("flipper.plan.signals.live_quote", return_value=None),
+            patch("flipper.plan._cost_basis", return_value={}),
+            patch("flipper.plan._personal_execution_stats", return_value={}),
         ):
             with self.assertRaisesRegex(ValueError, "no limit price"):
                 plan.plan(cash=1_000_000, offers=[{
@@ -1046,7 +1046,7 @@ class OpenOfferContractTests(unittest.TestCase):
     def test_plan_cli_reports_stale_export_without_traceback(self) -> None:
         err = io.StringIO()
         with (
-            patch("merch.runelite.read_open_offers",
+            patch("flipper.runelite.read_open_offers",
                   side_effect=RuntimeError("current GE slot export is stale")),
             redirect_stderr(err),
         ):
@@ -1367,17 +1367,17 @@ class PlanTests(unittest.TestCase):
     def _plan(self, scan_sigs, *, active=None, time_scan=None, bt=lambda i: _bt(True), item=lambda i: None,
               quote=lambda i: None, cost_map=None, open_strategies=None, personal=None, **kw):
         with (
-            patch("merch.plan.signals.scan", return_value=scan_sigs),
-            patch("merch.plan.signals.active_margin_scan",
+            patch("flipper.plan.signals.scan", return_value=scan_sigs),
+            patch("flipper.plan.signals.active_margin_scan",
                   return_value=active or {"candidates": [], "rejected": []}),
-            patch("merch.plan.signals.time_of_day_scan",
+            patch("flipper.plan.signals.time_of_day_scan",
                   return_value=time_scan or {"candidates": [], "rejected": []}),
-            patch("merch.plan.signals.backtest_signal", side_effect=lambda iid, **k: bt(iid)),
-            patch("merch.plan.signals.item_signal", side_effect=lambda iid, **k: item(iid)),
-            patch("merch.plan.signals.live_quote", side_effect=lambda iid: quote(iid)),
-            patch("merch.plan._cost_basis", return_value=cost_map or {}),
-            patch("merch.plan._personal_execution_stats", return_value=personal or {}),
-            patch("merch.plan._open_strategy_by_item", return_value=open_strategies or {}),
+            patch("flipper.plan.signals.backtest_signal", side_effect=lambda iid, **k: bt(iid)),
+            patch("flipper.plan.signals.item_signal", side_effect=lambda iid, **k: item(iid)),
+            patch("flipper.plan.signals.live_quote", side_effect=lambda iid: quote(iid)),
+            patch("flipper.plan._cost_basis", return_value=cost_map or {}),
+            patch("flipper.plan._personal_execution_stats", return_value=personal or {}),
+            patch("flipper.plan._open_strategy_by_item", return_value=open_strategies or {}),
         ):
             return plan.plan(cash=1_000_000, **kw)
 
@@ -1682,16 +1682,16 @@ class PlanTests(unittest.TestCase):
             return [_sig(1, 100, fillable=50)]
 
         with (
-            patch("merch.plan.signals.scan", side_effect=scan),
-            patch("merch.plan.signals.active_margin_scan",
+            patch("flipper.plan.signals.scan", side_effect=scan),
+            patch("flipper.plan.signals.active_margin_scan",
                   return_value={"candidates": [], "rejected": []}),
-            patch("merch.plan.signals.time_of_day_scan",
+            patch("flipper.plan.signals.time_of_day_scan",
                   return_value={"candidates": [], "rejected": []}),
-            patch("merch.plan.signals.backtest_signal", return_value=_bt(True)),
-            patch("merch.plan.signals.item_signal", return_value=None),
-            patch("merch.plan._cost_basis", return_value={}),
-            patch("merch.plan._personal_execution_stats", return_value={}) as personal_stats,
-            patch("merch.plan._open_strategy_by_item", return_value={}),
+            patch("flipper.plan.signals.backtest_signal", return_value=_bt(True)),
+            patch("flipper.plan.signals.item_signal", return_value=None),
+            patch("flipper.plan._cost_basis", return_value={}),
+            patch("flipper.plan._personal_execution_stats", return_value={}) as personal_stats,
+            patch("flipper.plan._open_strategy_by_item", return_value={}),
         ):
             plan.plan(cash=1_000_000, horizon="overnight")
 
@@ -1816,14 +1816,14 @@ class PlanTests(unittest.TestCase):
     def test_tiny_flip_is_skipped_below_manual_liquid_profit_floor(self) -> None:
         # liquid 50M -> floor 0.02% = 10,000. A flip realizing avg 100/u * 50 = 5,000 is noise.
         with (
-            patch("merch.plan.signals.scan", return_value=[_sig(1, 100, fillable=50)]),
-            patch("merch.plan.signals.active_margin_scan",
+            patch("flipper.plan.signals.scan", return_value=[_sig(1, 100, fillable=50)]),
+            patch("flipper.plan.signals.active_margin_scan",
                   return_value={"candidates": [], "rejected": []}),
-            patch("merch.plan.signals.backtest_signal", return_value=_bt(True)),  # avg 100/u realized
-            patch("merch.plan.signals.item_signal", return_value=None),
-            patch("merch.plan._cost_basis", return_value={}),
-            patch("merch.plan._personal_execution_stats", return_value={}),
-            patch("merch.plan._open_strategy_by_item", return_value={}),
+            patch("flipper.plan.signals.backtest_signal", return_value=_bt(True)),  # avg 100/u realized
+            patch("flipper.plan.signals.item_signal", return_value=None),
+            patch("flipper.plan._cost_basis", return_value={}),
+            patch("flipper.plan._personal_execution_stats", return_value={}),
+            patch("flipper.plan._open_strategy_by_item", return_value={}),
         ):
             p = plan.plan(cash=50_000_000, time_candidate_limit=0)
         self.assertEqual(p["buys"], [])
@@ -1841,14 +1841,14 @@ class PlanTests(unittest.TestCase):
             1: {"buy": {"eligible": True, "orders": 4, "window_fill_factor": 0.4}}
         }
         with (
-            patch("merch.plan.signals.scan", return_value=[_sig(1, 100, fillable=50)]),
-            patch("merch.plan.signals.active_margin_scan",
+            patch("flipper.plan.signals.scan", return_value=[_sig(1, 100, fillable=50)]),
+            patch("flipper.plan.signals.active_margin_scan",
                   return_value={"candidates": [], "rejected": []}),
-            patch("merch.plan.signals.backtest_signal", return_value=_bt(True)),
-            patch("merch.plan.signals.item_signal", return_value=None),
-            patch("merch.plan._cost_basis", return_value={}),
-            patch("merch.plan._personal_execution_stats", return_value=personal),
-            patch("merch.plan._open_strategy_by_item", return_value={}),
+            patch("flipper.plan.signals.backtest_signal", return_value=_bt(True)),
+            patch("flipper.plan.signals.item_signal", return_value=None),
+            patch("flipper.plan._cost_basis", return_value={}),
+            patch("flipper.plan._personal_execution_stats", return_value=personal),
+            patch("flipper.plan._open_strategy_by_item", return_value={}),
         ):
             p = plan.plan(cash=1_000_000, time_candidate_limit=0)
 

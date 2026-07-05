@@ -16,6 +16,7 @@ from pathlib import Path
 from .runelite import profile_rsn
 
 PLAN_SECTIONS = ("sell_fills", "buys", "patient_probes", "active_buys", "time_buys")
+INTENT_QUEUE_DIR = "merch-intents"  # RuneLite plugin compatibility path.
 
 
 def _runelite_home() -> Path:
@@ -60,7 +61,7 @@ def write_intents(intents: list[dict], *, rsn: str | None = None,
     rsn = rsn or profile_rsn()
     if not rsn:
         raise ValueError("set config/settings.json rsn or keep exactly one FU profile export")
-    path = (runelite_home or _runelite_home()) / "flipping" / "merch-intents" / f"{rsn}.jsonl"
+    path = (runelite_home or _runelite_home()) / "flipping" / INTENT_QUEUE_DIR / f"{rsn}.jsonl"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("".join(json.dumps(i, separators=(",", ":")) + "\n" for i in intents))
     return path
@@ -72,7 +73,7 @@ def _read_plan(path: str | None) -> dict:
 
 
 def _main(argv: list[str]) -> int:
-    ap = argparse.ArgumentParser(prog="merch.intents")
+    ap = argparse.ArgumentParser(prog="flipper.intents")
     ap.add_argument("plan", nargs="?", help="planner JSON file; defaults to stdin")
     ap.add_argument("--runelite-home", type=Path, default=None,
                     help="RuneLite home; defaults to RUNELITE_HOME or ~/.runelite")

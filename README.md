@@ -1,8 +1,9 @@
-# Evidence-Based Flipping
+# Evidence-Based OSRS Flipper
 
-**An OSRS Grand Exchange flipping advisor.** It reads your Flipping Utilities data, checks OSRS
-Wiki prices, and gives you exact buy/sell/cancel/reprice instructions to type into the GE.
-It never touches the game, you still place every offer yourself.
+**Evidence-Based OSRS Flipper is an OSRS Grand Exchange flipping advisor.** It reads your
+Flipping Utilities data, checks OSRS Wiki prices, and gives you exact buy/sell/cancel/reprice
+instructions to type into the GE. It never touches the game, you still place every offer
+yourself.
 
 
 <p align="center">
@@ -20,14 +21,17 @@ You need Git, [uv](https://docs.astral.sh/uv/) and a coding agent unless you wan
 
 1. **Clone and install**
   ```bash
-   git clone git@github.com:sasoder/evidence-based-flipping.git
-   cd evidence-based-flipping
+   git clone git@github.com:sasoder/evidence-based-osrs-flipper.git
+   cd evidence-based-osrs-flipper
    uv sync
   ```
 2. **Install the RuneLite plugin fork** —
-  [sasoder/rl-plugin](https://github.com/sasoder/rl-plugin). The stock Flipping Utilities doesn't export current GE slots or consume intent tags, and without those the planner can't  see your open offers or connect fills back to its calls. Build and install it, then enable auto-save (1 minute interval) and "Export current GE slots" (the fork's [Merch harness integration](https://github.com/sasoder/rl-plugin#merch-harness-integration) section has screenshots of both settings).
-3. **Open this repo in your agent and run `/setup`.** It checks that the plugin is exporting
-  data, then asks only for the OSRS Wiki contact, your RSN (if you have more than one RuneLite profile), and any subreddits you want the optional research pass to read. Answers go into gitignored `config/settings.json`. With one profile and no Reddit sources, no config is needed at all.
+  [sasoder/rl-plugin](https://github.com/sasoder/rl-plugin). The stock Flipping Utilities doesn't export current GE slots or consume intent tags, and without those the planner can't see your open offers or connect fills back to its calls. Build and install it, then enable auto-save (1 minute interval) and "Export current GE slots" (the fork's [Merch harness integration](https://github.com/sasoder/rl-plugin#merch-harness-integration) section has screenshots of both settings).
+3. **Open Evidence-Based OSRS Flipper in your agent and run `/setup`.** It checks that the
+  plugin is exporting data, then asks only for the OSRS Wiki contact, your RSN (if you have more
+  than one RuneLite profile), and any subreddits you want the optional research pass to read.
+  Answers go into gitignored `config/settings.json`. With one profile and no Reddit sources, no
+  config is needed at all.
 
 Then just talk to it: *"50m liquid, what should I buy?"*
 
@@ -55,7 +59,7 @@ Every row includes the latest instant-sell/instant-buy prices (`live lo/hi`) so 
 
 ## How it decides
 
-The LLM is not choosing trades. The planner (`merch.plan`) does the ranking, sizing, open-offer checks, and formatting. The agent just collects your inputs, runs it once, and presents the results.
+The LLM is not choosing trades. The planner (`flipper.plan`) does the ranking, sizing, open-offer checks, and formatting. The agent just collects your inputs, runs it once, and presents the results.
 
 Buy and sell targets come from percentile bands over ~15 days of hourly prices (buy at the 35th percentile of instant-sells, sell at the 75th of instant-buys), and every margin is after GE tax. Open offers are checked before anything new is suggested: zero-fill buys cancel after 4h, old sells move toward the live bid, and the 12h exit is counted even at a loss. The backtest uses the same exit rule, so the live plan should too.
 
@@ -79,7 +83,7 @@ Each call is written as an intent (item, side, quantity, price, strategy, reason
 The planner is a plain CLI underneath, if you want a plan without the agent:
 
 ```bash
-uv run python -m merch.plan --cash 50000000 --strategies active --max-new-slots 5 --write-intents --markdown
+uv run python -m flipper.plan --cash 50000000 --strategies active --max-new-slots 5 --write-intents --markdown
 ```
 
 - `--cash <gp>`: liquid GP to size against. Required.
@@ -94,9 +98,11 @@ Your exports and local state stay on disk and out of git:
 `data/incoming/flipping/`, `data/incoming/ge-slots/`, `state/offer_ages.json`,
 `state/offer_fills.json`.
 
-## Why "Evidence"?
+## Why "Evidence-Based OSRS Flipper"?
 
-Evidence is my RSN, and the suggestions are evidence-based, so the name was sitting right there. A week of following the calls on around 85m liquid returned about 16m, which would look more impressive if I wasn't poor.
+Evidence is my RSN, the suggestions are evidence-based, and OSRS Flipper says exactly what the
+tool is for. A week of following the calls on around 85m liquid returned about 16m, which would
+look more impressive if I wasn't poor.
 
 <p align="center">
   <img src="images/profit-week.png" alt="Flipping Utilities weekly profit graph showing about 16m profit" height="220">

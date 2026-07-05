@@ -1,6 +1,6 @@
 """Intraday percentile/entropy trade filter inspired by the OSRS price-band workflow.
 
-This complements merch.prices.margins. The margins command looks at the current spread;
+This complements flipper.prices.margins. The margins command looks at the current spread;
 this command asks whether recent timeseries data has recurring buy/sell bands worth
 placing patient GE offers around.
 
@@ -8,9 +8,9 @@ Execution bands use 1h data (~15 days) for 2-12h flips. Regime and trend checks 
 (~3 months) so a short-lived dip cannot hide a broader falling market.
 
 CLI:
-    python -m merch.signals scan --seed-limit 40 --limit 20 [--timestep 6h|1h|24h|5m]
-    python -m merch.signals item 13190 [--timestep ...]
-    python -m merch.signals backtest 13190 [--timestep ...]
+    python -m flipper.signals scan --seed-limit 40 --limit 20 [--timestep 6h|1h|24h|5m]
+    python -m flipper.signals item 13190 [--timestep ...]
+    python -m flipper.signals backtest 13190 [--timestep ...]
 """
 
 from __future__ import annotations
@@ -523,7 +523,7 @@ def active_margin_scan(seed_limit: int | None = None, limit: int = 20) -> dict:
     rejected = []
     seeds = prices.margins(min_volume=1, limit=None)
     high_value_seeds = [seed for seed in seeds if seed["buy"] >= ACTIVE_MIN_PRICE]
-    # 0 / None both mean "scan all" — consistent with merch.plan's `--seed-limit 0 == full pool`.
+    # 0 / None both mean "scan all" — consistent with flipper.plan's `--seed-limit 0 == full pool`.
     if seed_limit:
         high_value_seeds = high_value_seeds[:seed_limit]
     prices.prefetch_timeseries([s["id"] for s in high_value_seeds], ("5m",))
@@ -910,7 +910,7 @@ _TIMESTEPS = ["5m", "1h", "6h", "24h"]
 
 
 def _main(argv: list[str]) -> int:
-    ap = argparse.ArgumentParser(prog="merch.signals")
+    ap = argparse.ArgumentParser(prog="flipper.signals")
     sub = ap.add_subparsers(dest="cmd", required=True)
     p_scan = sub.add_parser("scan")
     p_scan.add_argument("--seed-limit", type=int, default=40)

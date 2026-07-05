@@ -9,11 +9,11 @@ so by default they print a one-line summary and require a filter (id / --ids / n
 Pass --raw to dump the full payload (for piping to a file, not for an agent's context).
 
 CLI:
-    python -m merch.prices latest [item_id] [--ids 4151,560] [--raw]
-    python -m merch.prices mapping [query] [--limit N] [--raw]
-    python -m merch.prices 5m | 1h [--ids 4151,560] [--raw]
-    python -m merch.prices timeseries <item_id> <5m|1h|6h|24h> [--tail N] [--raw]
-    python -m merch.prices margins [--min-volume N] [--limit N]
+    python -m flipper.prices latest [item_id] [--ids 4151,560] [--raw]
+    python -m flipper.prices mapping [query] [--limit N] [--raw]
+    python -m flipper.prices 5m | 1h [--ids 4151,560] [--raw]
+    python -m flipper.prices timeseries <item_id> <5m|1h|6h|24h> [--tail N] [--raw]
+    python -m flipper.prices margins [--min-volume N] [--limit N]
 """
 
 from __future__ import annotations
@@ -164,7 +164,7 @@ def margins(min_volume: int = 0, limit: int | None = 50) -> list[dict]:
         })
     rows.sort(key=lambda r: r["potential_1h"], reverse=True)
     # 0 and None both mean "no cap" — matches the `--limit 0 == full pool` convention used by
-    # merch.plan, so the same mental model can't silently truncate to an empty list here.
+    # flipper.plan, so the same mental model can't silently truncate to an empty list here.
     return rows[:limit] if limit else rows
 
 
@@ -217,7 +217,7 @@ def timeseries_digest(rows: list[dict]) -> dict:
 
 
 def _main(argv: list[str]) -> int:
-    ap = argparse.ArgumentParser(prog="merch.prices")
+    ap = argparse.ArgumentParser(prog="flipper.prices")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
     p_map = sub.add_parser("mapping")

@@ -6,8 +6,8 @@ Inputs produced by RuneLite on the trading machine:
   data/incoming/ge-slots/*.json           — FU fork current GE slot export
 
 CLI:
-    python -m merch.runelite flips       # normalized realized flips
-    python -m merch.runelite offers      # non-empty GE slots from FU current-slot export
+    python -m flipper.runelite flips       # normalized realized flips
+    python -m flipper.runelite offers      # non-empty GE slots from FU current-slot export
 """
 
 from __future__ import annotations
@@ -225,7 +225,7 @@ def read_flips() -> list[dict]:
 
 
 def read_open_offers() -> list[dict]:
-    """Current GE slots in merch.plan's open-offer shape.
+    """Current GE slots in flipper.plan's open-offer shape.
 
     Uses the patched Flipping Utilities current-slot export because it is the
     authoritative live GE slot snapshot: item, side, quantity, filled quantity,
@@ -236,7 +236,7 @@ def read_open_offers() -> list[dict]:
 
 
 def _read_open_offers_from_export() -> list[dict]:
-    """Read FU's current-slot JSON export into merch.plan's open-offer shape.
+    """Read FU's current-slot JSON export into flipper.plan's open-offer shape.
 
     Returns non-empty GE slots:
     [{"slot": 0, "id": 32032, "side": "sell", "qty": 261,
