@@ -1,6 +1,6 @@
 ---
 name: flip
-description: Run an on-demand OSRS GE flipping planning session. Use when the user asks what to buy, asks for a flip plan, or asks for merchanting advice from Flipping Utilities exports and merch.plan.
+description: Run an on-demand OSRS GE flipping planning session. Use when the user asks what to buy, asks for a flip plan, or asks for merchanting advice from Flipping Utilities exports and flipper.plan.
 ---
 
 # Flip Planning Workflow
@@ -23,7 +23,7 @@ Liquid gp alone is not enough: attendance changes which strategies are safe, so 
 "30m, what should I buy" still gets the intake prompt.
 
 Exception — a pure offer-review request ("what should I do with my offers?", "look at my
-slots") needs no intake at all: run `merch.plan --cash 0 --max-new-slots 0 --markdown` and
+slots") needs no intake at all: run `flipper.plan --cash 0 --max-new-slots 0 --markdown` and
 present the open-offer checks. Ask for the full new-buy intake only if the user then wants new
 buys. Collect all missing inputs in one round (a single structured multi-question prompt if the
 engine supports one, otherwise one concise message):
@@ -57,7 +57,7 @@ Refresh RuneLite exports before reading offers:
 
 ```bash
 scripts/runelite-sync.sh
-uv run python -m merch.runelite offers
+uv run python -m flipper.runelite offers
 ```
 
 If that returns nothing or looks stale/missing, ask the user for current open GE offers (slot,
@@ -71,18 +71,18 @@ size off a stale snapshot.
 ### 2. Fast deterministic plan (default)
 
 ```bash
-uv run python -m merch.plan --cash <liquid_gp> --write-intents --markdown
+uv run python -m flipper.plan --cash <liquid_gp> --write-intents --markdown
 ```
 
 If the user gave preferences, pass them directly:
 
 ```bash
-uv run python -m merch.plan --cash <liquid_gp> \
+uv run python -m flipper.plan --cash <liquid_gp> \
     --strategies patient,active --max-new-slots 3 --write-intents --markdown
 ```
 
 Strategy and slot preferences are planner constraints, not LLM discretion. Do not add or remove rows
-by hand after the planner returns. For overnight requests, run `merch.plan --horizon overnight
+by hand after the planner returns. For overnight requests, run `flipper.plan --horizon overnight
 --seed-limit 0 --time-seed-limit 0`; this excludes active-margin calls before sizing and intent
 writing, sizes patient candidates to the 12h hold window, and also checks the account's best FU
 round-trip items even when they are outside the current margin top-N. Do not manually remove
@@ -121,14 +121,14 @@ the strategy gate.
 
 ## Where the LLM is — and isn't
 
-The decision loop is deterministic. `merch.plan` grades past fills, scans candidates, applies
+The decision loop is deterministic. `flipper.plan` grades past fills, scans candidates, applies
 strategy gates, triages open offers, sizes against budget/slots, and writes each call's reason
 and falsifiable prediction. The LLM may interpret catalyst research into a small
-`{boost, avoid}` overlay that `merch.plan --overlay` consumes. Do not re-do in the LLM what
+`{boost, avoid}` overlay that `flipper.plan --overlay` consumes. Do not re-do in the LLM what
 the planner already did (ranking, sizing, triage, formatting); feed the reasoning step only the
 research digest plus the candidate names. Boost only re-ranks gate survivors; avoid vetoes one.
 Research never creates an otherwise ineligible trade.
-During `/flip`, do not run separate scan/backtest CLIs or repeatedly rerun `merch.plan` to inspect
+During `/flip`, do not run separate scan/backtest CLIs or repeatedly rerun `flipper.plan` to inspect
 sections; the final markdown action table is the executable contract.
 
 ## State model
@@ -162,7 +162,7 @@ the actual offer. Vague orders can't be evaluated.
 ## Selection is the edge — strategy-specific gates
 
 A fat paper margin usually means the item has a wide range because it is *trending down*, not
-oscillating. Execution bands use 1h data; the broader regime guard uses 6h data. `merch.plan`
+oscillating. Execution bands use 1h data; the broader regime guard uses 6h data. `flipper.plan`
 runs the patient-band backtest gate internally before recommending a buy. Reject any candidate
 that is not at a fresh live-low entry, is not net-positive (`total_profit_per_unit > 0`) with
 enough round-trips (`trades >= 4`) under that gate. Rank survivors by expected realized gp/hour,
@@ -175,7 +175,7 @@ profit clears the slot floor. This strategy uses at most 5% of liquid across all
 exists to gather real fill evidence; its distance rule is not backtest-validated and never weakens
 the production fresh-live-low gate.
 
-Daily UTC patterns use a separate **`flip-time-of-day`** experiment. `merch.signals time-scan`
+Daily UTC patterns use a separate **`flip-time-of-day`** experiment. `flipper.signals time-scan`
 tests 6-hour entry/exit windows using roughly three months of data: the older 70% selects the
 window and the newest 30% must independently remain net-positive with at least 20 observations,
 a positive median after-tax profit, and at least a 60% win rate; the training window needs at
@@ -185,7 +185,7 @@ and hard-exits by 24h. It never weakens the normal patient-band gate or gets mer
 performance.
 
 High-value gear uses a separate **`flip-active`** strategy because ordinary 15-90 minute margin
-flipping is not the percentile-band strategy. `merch.signals active-scan` screens items above
+flipping is not the percentile-band strategy. `flipper.signals active-scan` screens items above
 1m for fresh two-sided prints, after-tax net margin, minimum ROI, real flow on both sides, and
 no sharp 5m decline. Active quantity is capped only by the GE limit and available liquid gp.
 Active offers compete for available slots by expected realized gp/hour, cancel if unfilled after
@@ -226,18 +226,18 @@ liquidity, budget, or slot gates.
 
 ## Data discipline
 
-- **Right-size every LLM-bound payload.** `merch.plan` is the compact gather-and-decide entry
+- **Right-size every LLM-bound payload.** `flipper.plan` is the compact gather-and-decide entry
   point. Never dump a whole dataset into context — the price CLIs reduce by default and refuse
   bare universe dumps; filter by id/`--ids`/name.
 - **Never infer cash from snapshots.** Ask the user for current liquid GP and pass it as
-  `merch.plan --cash <liquid_gp>` every run. This can intentionally be less than account cash if
+  `flipper.plan --cash <liquid_gp>` every run. This can intentionally be less than account cash if
   they want to reserve GP outside the harness.
-- When discussing the user's open offers, `merch.prices mapping <id>` and
-  `merch.prices latest <id>` are fair game for those items — name resolution and a current
+- When discussing the user's open offers, `flipper.prices mapping <id>` and
+  `flipper.prices latest <id>` are fair game for those items — name resolution and a current
   quote are part of giving a real answer, not a dataset dump. The universe-wide scan CLIs
   remain off-limits during a session.
 - External research is optional in `/flip` because it often adds latency without changing gated
-  survivors. Run `uv run python -m merch.research brief` only when the user asks for
+  survivors. Run `uv run python -m flipper.research brief` only when the user asks for
   research/catalysts/news or the request is clearly event-driven; the full procedure lives in
   this skill's `research.md`. If used, it never fails silently:
   an unreachable source returns a concrete `error` (e.g. `HTTP 403`) you must cite — never a vague
