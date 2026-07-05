@@ -41,6 +41,14 @@ TIME_OF_DAY_BUY_CANCEL_HOURS = 6
 DEPLOYMENT_SHORTFALL_PCT = 0.01
 MIN_FLIP_PROFIT_PCT = 0.0002  # a slot must net >= this fraction of net worth (backtested realized),
                               # else it is too small to be worth the slot at this bankroll
+MIN_RETURN_PER_CAPITAL_HOUR = 0.0005  # a slot must also return >= 0.05%/hour on the gp it
+                                      # commits to the round trip (0.6% per 12h hold) — the
+                                      # opportunity cost of capital a later run could deploy
+                                      # into a better entry. Charged on expected fills, not
+                                      # posted quantity: unfilled buy escrow refunds at the
+                                      # lane's zero-fill cancel and is redeployable anytime.
+                                      # Kills e.g. 12k expected on 1.45m held up to 24h while
+                                      # leaving cheap residual mop-up buys (tiny capital) alive.
 PATIENT_MIN_NET_MARGIN_GP = 10  # a patient flip's after-tax per-unit spread must clear this many
                                 # coins; thinner than this is bid-ask tick noise, not a real edge
                                 # (e.g. Ancient essence 16->17 = 1gp), so its modelled profit is
@@ -122,7 +130,8 @@ def _deadline_due(value: str | None) -> bool:
         return False
 
 
-def _buy_row(sig: dict, bt: dict, qty: int, execution_evidence: dict | None = None,
+def _buy_row(sig: dict, bt: dict, qty: int, expected_profit: int,
+             execution_evidence: dict | None = None,
              staple: dict | None = None) -> dict:
     personal = ""
     if execution_evidence:
@@ -151,12 +160,13 @@ def _buy_row(sig: dict, bt: dict, qty: int, execution_evidence: dict | None = No
                       "by": _by_hours()},
         "confidence": 0.65 if staple and staple.get("staple") else 0.60,
         "strategy": "patient-band",
+        "expected_profit": expected_profit,
         **({"staple_evidence": staple} if staple and staple.get("staple") else {}),
         **({"execution_stats": execution_evidence} if execution_evidence else {}),
     }
 
 
-def _time_buy_row(sig: dict, qty: int) -> dict:
+def _time_buy_row(sig: dict, qty: int, expected_profit: int) -> dict:
     return {
         "id": sig["id"],
         "name": sig["name"],
@@ -174,7 +184,7 @@ def _time_buy_row(sig: dict, qty: int) -> dict:
             f"newest holdout {sig['test']['win_rate']:.0%} wins over "
             f"{sig['test']['trades']} samples, "
             f"{sig['test']['median_profit_per_unit']:,}gp/u median after tax; "
-            "sized to fillability/GE limit, cancel zero-fill after "
+            "sized to sell-side exit capacity/GE limit, cancel zero-fill after "
             f"{TIME_OF_DAY_BUY_CANCEL_HOURS}h"
         ),
         "predicted": {
@@ -183,7 +193,7 @@ def _time_buy_row(sig: dict, qty: int) -> dict:
             "by": _by_hours(sig["hold_hours"]),
         },
         "hard_exit_at": _by_hours(24),
-        "expected_profit": sig["expected_profit_per_unit"] * qty,
+        "expected_profit": expected_profit,
         "pattern_evidence": {
             "entry_window_utc": sig["entry_window_utc"],
             "exit_window_utc": sig["exit_window_utc"],
@@ -261,6 +271,7 @@ def _sell_fill_row(offer: dict, triage: dict) -> dict | None:
 def _project_after_triage(offers: list[dict], triage: list[dict], budget: int) -> dict:
     free_slots = MAX_SLOTS
     released_buy_gp = 0
+    released_sell_gp = 0
     locked_buy_gp = 0
     sell_fills = []
     for offer, row in zip(offers, triage):
@@ -273,6 +284,13 @@ def _project_after_triage(offers: list[dict], triage: list[dict], budget: int) -
         if verdict in {"cancel", "collect"}:
             if offer.get("side") == "buy":
                 released_buy_gp += unfilled_gp
+            elif offer.get("side") == "sell" and filled > 0:
+                # Filled-but-uncollected sell proceeds become cash the moment the
+                # plan's own collect/cancel instruction is executed, so they are
+                # spendable this run just like a cancelled buy's escrow refund.
+                released_sell_gp += ge_tax.net_sale_price(
+                    offer["id"], row.get("name") or "", price
+                ) * filled
             sell = _sell_fill_row(offer, row)
             if sell:
                 sell_fills.append(sell)
@@ -284,8 +302,9 @@ def _project_after_triage(offers: list[dict], triage: list[dict], budget: int) -
 
     return {
         "free_slots": max(0, free_slots),
-        "budget_left": budget + released_buy_gp,
+        "budget_left": budget + released_buy_gp + released_sell_gp,
         "released_buy_gp": released_buy_gp,
+        "released_sell_gp": released_sell_gp,
         "locked_buy_gp": locked_buy_gp,
         "sell_fills": sell_fills,
     }
@@ -327,6 +346,8 @@ def _action_rows(p: dict) -> list[dict]:
             side=o.get("side"),
             qty=o.get("qty"),
             price=price,
+            capital=None,
+            expected_profit=None,
             live_low=o.get("live_low"),
             live_high=o.get("live_high"),
             sell_target="",
@@ -341,6 +362,8 @@ def _action_rows(p: dict) -> list[dict]:
             side="sell",
             qty=b.get("qty"),
             price=b.get("price"),
+            capital=None,
+            expected_profit=None,
             live_low=b.get("live_low"),
             live_high=b.get("live_high"),
             sell_target=b.get("sell_target"),
@@ -361,6 +384,9 @@ def _action_rows(p: dict) -> list[dict]:
                 side=b.get("action"),
                 qty=b.get("qty"),
                 price=b.get("price"),
+                capital=(b["qty"] * b["price"]
+                         if b.get("qty") and b.get("price") else None),
+                expected_profit=b.get("expected_profit"),
                 live_low=b.get("live_low"),
                 live_high=b.get("live_high"),
                 sell_target=b.get("sell_target"),
@@ -997,39 +1023,57 @@ def plan(cash: int, offers: list[dict] | None = None,
         )
         buy = sig["entry_price"] or 0
         evidence = None
+        # Order size may exceed the expected-fill estimate: a buy-side partial fill is
+        # nearly free (cancel next GE visit), so cheap items post up to what the sell side
+        # can absorb before the exit deadline. Expected profit stays anchored to expected
+        # fills so the floors and ranking never credit units that likely won't fill.
         if strategy_type == "patient":
             personal_fillable, evidence = execution_stats.adjusted_fillable_qty(
                 sig["id"], sig["fillable_qty"] or 0, personal_stats
             )
-            qty = min(personal_fillable, (budget_left // buy) if buy else 0,
+            qty = min(max(personal_fillable, sig.get("exit_capacity_qty") or 0),
+                      (budget_left // buy) if buy else 0,
                       sig["ge_limit"] or 10**9)
+            expected_fill = min(qty, personal_fillable)
             per_unit = bt["avg_profit_per_unit"]
+            hold_hours = signals.MAX_HOLD_HOURS
         elif strategy_type == "active":
-            # active scan already caps fillable_qty by GE limit and two-sided flow.
+            # active scan already caps fillable_qty by GE limit and two-sided flow; a
+            # high-value partial fill is not free, so no exit-capacity oversizing here.
             qty = min(sig["fillable_qty"] or 0, (budget_left // buy) if buy else 0)
+            expected_fill = qty
             per_unit = sig["expected_value_per_unit"]
+            hold_hours = ACTIVE_HORIZON_MINUTES / 60
         else:  # time-of-day
-            qty = min(sig["fillable_qty"] or 0, (budget_left // buy) if buy else 0,
+            qty = min(max(sig["fillable_qty"] or 0, sig.get("exit_capacity_qty") or 0),
+                      (budget_left // buy) if buy else 0,
                       sig["ge_limit"] or 10**9)
+            expected_fill = min(qty, sig["fillable_qty"] or 0)
             per_unit = sig["expected_profit_per_unit"]
-        expected_profit = int(per_unit * qty)
+            hold_hours = 24  # entry window + hold; the lane hard-exits by 24h
+        expected_profit = int(per_unit * expected_fill)
         if qty <= 0:
             skip_target.append({"id": sig["id"], "name": sig["name"],
                                 "reason": "no budget/liquidity for a slot"})
             continue
-        if expected_profit < profit_floor:
+        capital_floor = int(expected_fill * buy * hold_hours * MIN_RETURN_PER_CAPITAL_HOUR)
+        required = max(profit_floor, capital_floor)
+        if expected_profit < required:
+            locked = (f" ({expected_fill * buy:,}gp committed ≤{hold_hours:g}h)"
+                      if capital_floor > profit_floor else "")
             skip_target.append({
                 "id": sig["id"], "name": sig["name"],
-                "reason": f"expected profit {expected_profit:,}gp < floor {profit_floor:,}gp",
+                "reason": (f"expected profit {expected_profit:,}gp < "
+                           f"floor {required:,}gp{locked}"),
             })
             continue
         if strategy_type == "patient":
             staple = (personal_stats.get(sig["id"]) or {}).get("round_trip")
-            out["buys"].append(_buy_row(sig, bt, qty, evidence, staple))
+            out["buys"].append(_buy_row(sig, bt, qty, expected_profit, evidence, staple))
         elif strategy_type == "active":
             out["active_buys"].append(_active_buy_row(sig, qty, expected_profit))
         else:
-            out["time_buys"].append(_time_buy_row(sig, qty))
+            out["time_buys"].append(_time_buy_row(sig, qty, expected_profit))
         budget_left -= qty * buy
         free_slots -= 1
         selected_ids.add(sig["id"])
@@ -1055,13 +1099,16 @@ def plan(cash: int, offers: list[dict] | None = None,
             sig["ge_limit"] or 10**9,
         )
         expected_profit = int(bt["avg_profit_per_unit"] * qty)
-        if qty <= 0 or expected_profit < profit_floor:
+        probe_required = max(profit_floor, int(
+            qty * buy * signals.MAX_HOLD_HOURS * MIN_RETURN_PER_CAPITAL_HOUR
+        ))
+        if qty <= 0 or expected_profit < probe_required:
             out["skipped"].append({
                 "id": sig["id"], "name": sig["name"],
                 "reason": (
                     "patient probe has no affordable/liquid quantity"
                     if qty <= 0 else
-                    f"patient probe expected profit {expected_profit:,}gp < floor {profit_floor:,}gp"
+                    f"patient probe expected profit {expected_profit:,}gp < floor {probe_required:,}gp"
                 ),
             })
             continue
@@ -1107,16 +1154,23 @@ def plan(cash: int, offers: list[dict] | None = None,
     out["budget_left_gp"] = budget_left
     planned_buys = out["buys"] + out["patient_probes"] + out["active_buys"] + out["time_buys"]
     planned_buy_gp = sum(b["qty"] * b["price"] for b in planned_buys)
-    deployed = projection["locked_buy_gp"] + planned_buy_gp
-    utilization = deployed / liquid if liquid else 0
-    unspent = max(0, liquid - deployed)
+    # Utilization measures this run's planned buys against the gp actually available to
+    # place them: fresh liquid plus whatever this plan's own instructions free (cancelled
+    # buy escrow refunds, collected sell proceeds). Gp escrowed in *held* open buys was
+    # spent by a previous run, so it is reported separately, never counted as deployment
+    # of today's liquid (which pushed the percentage past 100%).
+    available = liquid + projection["released_buy_gp"] + projection["released_sell_gp"]
+    utilization = planned_buy_gp / available if available else 0
+    unspent = max(0, available - planned_buy_gp)
     out["deployment"] = {
-        "planned_gp": deployed,
+        "planned_gp": planned_buy_gp,
         "planned_buy_gp": planned_buy_gp,
+        "available_gp": available,
+        "held_buy_gp": projection["locked_buy_gp"],
         "unspent_gp": unspent,
         "utilization_pct": round(utilization * 100, 1),
         "constraint": (
-            None if unspent <= int(liquid * DEPLOYMENT_SHORTFALL_PCT) else
+            None if unspent <= int(available * DEPLOYMENT_SHORTFALL_PCT) else
             "eligible fillability, profit floor, budget, or slot constraints"
         ),
     }
@@ -1130,17 +1184,19 @@ def _render_md(p: dict) -> str:
          f"+{p['slots']['open_offers']} used / {p['slots']['max']}"]
     deployment = p.get("deployment")
     if deployment:
+        held = deployment.get("held_buy_gp") or 0
+        held_note = f" · {held:,}gp already escrowed in held buys" if held else ""
         L.append(
             f"deployment {deployment['utilization_pct']:.1f}% "
-            f"({deployment['unspent_gp']:,}gp unspent)"
+            f"({deployment['unspent_gp']:,}gp unspent{held_note})"
         )
     rows = _action_rows(p)
     if rows:
         L += [
             "",
             "## Actions",
-            "| action | item | qty | price | live lo/hi | sell target | deadline | reason |",
-            "|---|---|---:|---:|---:|---:|---|---|",
+            "| action | item | qty | price | capital | exp. profit | live lo/hi | sell target | deadline | reason |",
+            "|---|---|---:|---:|---:|---:|---:|---:|---|---|",
         ]
         for r in rows:
             # Fold the offer side into the action where it isn't implied: new
@@ -1151,6 +1207,7 @@ def _render_md(p: dict) -> str:
             L.append(
                 f"| **{action}** | {_fmt(r['item'])} | "
                 f"{_fmt(r['qty'])} | {_fmt(r['price'])} | "
+                f"{_fmt(r.get('capital'))} | {_fmt(r.get('expected_profit'))} | "
                 f"{_fmt_live(r)} | "
                 f"{_fmt(r['sell_target'])} | {_fmt(r['deadline'])} | {_fmt(r['reason'])} |"
             )

@@ -166,6 +166,17 @@ def _fillable_qty(ge_limit: int, volume_1h: dict, fill_window_hours: float,
     return projected
 
 
+def _exit_capacity_qty(ge_limit: int, volume_1h: dict, exit_window_hours: float,
+                       participation_rate: float) -> int:
+    """Order-size bound: units the sell side can plausibly absorb before the exit deadline.
+
+    Buy orders may be posted above the expected-fill estimate because a buy-side partial
+    fill is nearly free (cancel on the next GE visit); the leg that strands capital is the
+    exit, so the posted quantity is bounded by high-side flow over the exit window."""
+    projected = max(0, round(volume_1h.get("high", 0) * exit_window_hours * participation_rate))
+    return min(ge_limit, projected) if ge_limit else projected
+
+
 def _regime_risk(rows: list[dict], lows: list[int], highs: list[int],
                  current_low: int | None, timestep: str = REGIME_TIMESTEP) -> dict:
     """Small drift/shock check so old percentile bands do not hide a breaking market."""
@@ -401,6 +412,7 @@ def item_signal(
     margin_limit = margin * ge_limit if ge_limit else None
     volume_1h = _volume_1h(item_id)
     fillable_qty = _fillable_qty(ge_limit, volume_1h, fill_window_hours, participation_rate)
+    exit_capacity_qty = _exit_capacity_qty(ge_limit, volume_1h, MAX_HOLD_HOURS, participation_rate)
     liquidity_profit = margin * fillable_qty
     capital_required = buy_price * fillable_qty
     roi_pct = round(margin / buy_price * 100, 2) if buy_price else None
@@ -443,6 +455,7 @@ def item_signal(
         "low_vol_1h": volume_1h["low"],
         "fill_window_hours": fill_window_hours,
         "fillable_qty": fillable_qty,
+        "exit_capacity_qty": exit_capacity_qty,
         "liquidity_profit": liquidity_profit,
         "capital_required": capital_required,
         "roi_pct": roi_pct,
@@ -756,6 +769,9 @@ def time_of_day_signal(item_id: int) -> dict | None:
 
     exit_bucket = (entry_bucket + hold_steps) % TIME_OF_DAY_BUCKETS
     hold_hours = hold_steps * TIME_OF_DAY_STEP_HOURS
+    exit_capacity_qty = _exit_capacity_qty(
+        meta["limit"], volume, hold_hours, participation_rate=0.05
+    )
     return {
         "id": item_id,
         "name": meta["name"],
@@ -765,6 +781,7 @@ def time_of_day_signal(item_id: int) -> dict | None:
         "current_high": latest["current_high"],
         "ge_limit": meta["limit"],
         "fillable_qty": fillable_qty,
+        "exit_capacity_qty": exit_capacity_qty,
         "expected_profit_per_unit": expected_profit,
         "expected_profit": expected_profit * fillable_qty,
         "hold_hours": hold_hours,
