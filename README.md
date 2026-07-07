@@ -26,7 +26,7 @@ You need Git, [uv](https://docs.astral.sh/uv/) and a coding agent unless you wan
    uv sync
   ```
 2. **Install the RuneLite plugin fork** —
-  [sasoder/rl-plugin](https://github.com/sasoder/rl-plugin). The stock Flipping Utilities doesn't export current GE slots or consume intent tags, and without those the planner can't see your open offers or connect fills back to its calls. Build and install it, then enable auto-save (1 minute interval) and "Export current GE slots" (the fork's [Merch harness integration](https://github.com/sasoder/rl-plugin#merch-harness-integration) section has screenshots of both settings).
+  [sasoder/rl-plugin](https://github.com/sasoder/rl-plugin). The stock Flipping Utilities doesn't export current GE slots or consume intent tags, and without those the planner can't see your open offers or connect fills back to its calls. Build and install it, then enable auto-save (1 minute interval) and "Export current GE slots" (the fork's [Evidence-Based OSRS Flipper integration](https://github.com/sasoder/rl-plugin#evidence-based-osrs-flipper-integration) section has screenshots of both settings).
 3. **Open the repo in your agent and run `/setup`.** It checks that the
   plugin is exporting data, then asks only for the OSRS Wiki contact, your RSN (if you have more
   than one RuneLite profile), and any subreddits you want the optional research pass to read.
