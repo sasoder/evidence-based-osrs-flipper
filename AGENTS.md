@@ -13,5 +13,5 @@ copies (e.g. `.claude/skills/`) are thin pointers back to it.
 Python managed with `uv`. Run tests with:
 
 ```bash
-uv run python -m unittest discover -s tests -v
+uv run python -m unittest
 ```
