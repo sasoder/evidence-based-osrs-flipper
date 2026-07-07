@@ -112,5 +112,5 @@ look more impressive if I wasn't poor.
 ## Tests
 
 ```bash
-uv run python -m unittest discover -s tests -v
+uv run python -m unittest
 ```

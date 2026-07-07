@@ -17,7 +17,7 @@ Verify `uv` is installed (if not, point the user to
 https://docs.astral.sh/uv/getting-started/installation/), then run `uv sync` and:
 
 ```bash
-uv run python -m unittest discover -s tests -v
+uv run python -m unittest
 ```
 
 ### 2. RuneLite plugin
