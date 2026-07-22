@@ -19,6 +19,9 @@ config/settings.json
 state/
 overlay.json
 
+# generated planner evaluation runs; curated baselines are checked in separately
+evaluation/results/
+
 # engine-local files
 .claude/settings.local.json
 .claude/worktrees/

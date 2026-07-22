@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "bankrolls_gp": [10000000, 30000000, 70000000, 100000000, 250000000, 1000000000],
+  "attendance": [
+    {"name": "attended", "away_hours": null, "horizon": "intraday"},
+    {"name": "away_2h", "away_hours": 2, "horizon": "intraday"},
+    {"name": "overnight", "away_hours": 12, "horizon": "overnight"}
+  ],
+  "slot_caps": [1, 4, 8],
+  "strategies": "balanced",
+  "minimum_expected_return_per_posted_capital_hour": 0.0005,
+  "maximum_position_loss_pct": 0.01,
+  "maximum_portfolio_loss_pct": 0.03,
+  "dominance_tolerance_gp": 0,
+  "simulation": {
+    "patient": {"timestep": "1h", "entry_hours": 4, "hold_hours": 12, "participation_rate": 0.10},
+    "patient-probe": {"timestep": "1h", "entry_hours": 4, "hold_hours": 12, "participation_rate": 0.05},
+    "active-margin": {"timestep": "5m", "entry_hours": 0.5, "hold_hours": 1.5, "participation_rate": 0.25},
+    "time-of-day": {"timestep": "6h", "entry_hours": 6, "hold_hours": 24, "participation_rate": 0.05}
+  }
+}

@@ -15,3 +15,9 @@ Python managed with `uv`. Run tests with:
 ```bash
 uv run python -m unittest
 ```
+
+For planner optimization, `evaluation/` is the frozen oracle. Do not edit its contract, runner,
+fixtures, comparison logic, or tests in the same change as planner behavior. Run
+`uv run python -m evaluation.runner --output evaluation/results/current.json`, then compare against
+`evaluation/baselines/main.json`. Evaluator changes require separate human review and baseline
+regeneration.
