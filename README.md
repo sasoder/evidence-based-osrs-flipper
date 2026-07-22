@@ -92,6 +92,21 @@ uv run python -m flipper.plan --cash 50000000 --strategies active --max-new-slot
 - `--horizon overnight`: drop keyboard-dependent strategies and size for 12h away.
 - `--write-intents`: queue exact offer signatures for the plugin fork to tag.
 
+## Evaluating planner changes
+
+Planner unit tests are supplemented by a frozen replay corpus that reruns selection from raw market
+universes across dates, bankrolls, attendance horizons, and slot caps, then scores the chosen orders
+on withheld future buckets:
+
+```bash
+uv run python -m evaluation.runner --output evaluation/results/current.json
+uv run python -m evaluation.compare \
+  evaluation/baselines/main.json evaluation/results/current.json --mode repair
+```
+
+The evaluator and its fixtures must not change in the same patch as planner behavior. See
+[`evaluation/SPEC.md`](evaluation/SPEC.md) for the acceptance contract.
+
 ## Runtime data
 
 Your exports and local state stay on disk and out of git:
