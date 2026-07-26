@@ -1,11 +1,11 @@
 {
   "schema_version": 1,
-  "generated_at": "2026-07-22T17:59:11+00:00",
-  "git_revision": "5bb439bb1b11dc64f598dd33de3bc721eb5dc670",
+  "generated_at": "2026-07-26T16:08:23+00:00",
+  "git_revision": "1ce0f40b30f9f3dadff645b84b8d8492b45cd81e",
   "contract": "evaluation/contract.json",
   "contract_sha256": "f206b1466c2efc68d1f83b56c88cfda01db00bca6bfd1178d5fda88dbc9cadaa",
-  "evaluator_sha256": "e0086a8668c93ed054c81ec39a446ac3e6893170cd7a2541372b0142043e5762",
-  "oracle_sha256": "e8409c85f5e3eccce6668dc70683b51249c4591b8de076e61f8683db39a72bcf",
+  "evaluator_sha256": "b56794ea5b8d9addbaa83d2d38014f1c02ab243014d9621fa638cd409ceeb5f3",
+  "oracle_sha256": "43fd5b7c8a6bd207d0490e7676c8245ab7af9d0d2cb7b65384491aa60a19b7dd",
   "fixtures": [
     {
       "name": "stable_seed_11",
@@ -72,13 +72,26 @@
         "items_with_5m": 100,
         "selection": "all eligible items"
       }
+    },
+    {
+      "name": "wiki_cache_2026-07-26",
+      "source": "real_market_2026-07-26.json.gz",
+      "source_sha256": "bc00e2a210be71b3d789410f5517b586d404afead509688a2778512d94b4bbd7",
+      "items": 524,
+      "as_of": "2026-07-25T06:00:00+00:00",
+      "universe": {
+        "eligible_items": 524,
+        "cohort_items": 524,
+        "items_with_5m": 10,
+        "selection": "all eligible items"
+      }
     }
   ],
   "summary": {
-    "cases": 378,
-    "nonempty_cases": 279,
-    "nonempty_rate": 0.7381,
-    "unique_selection_portfolios": 150,
+    "cases": 432,
+    "nonempty_cases": 324,
+    "nonempty_rate": 0.75,
+    "unique_selection_portfolios": 191,
     "unique_selection_portfolios_by_fixture": {
       "stable_seed_11": 17,
       "stable_seed_29": 17,
@@ -86,18 +99,19 @@
       "reversal_seed_71": 11,
       "crash_guard_seed_89": 11,
       "wiki_cache_2026-07-11": 33,
-      "wiki_cache_2026-07-22": 37
+      "wiki_cache_2026-07-22": 37,
+      "wiki_cache_2026-07-26": 41
     },
-    "cash_selection_transitions": 315,
-    "cash_selection_changes": 93,
-    "cash_selection_change_rate": 0.2952,
-    "mean_expected_profit_gp": 654624,
-    "mean_actual_profit_gp": -109599,
+    "cash_selection_transitions": 360,
+    "cash_selection_changes": 125,
+    "cash_selection_change_rate": 0.3472,
+    "mean_expected_profit_gp": 592727,
+    "mean_actual_profit_gp": -96504,
     "median_actual_profit_gp": 0,
     "worst_actual_profit_gp": -6280008,
-    "aggregate_utility_gp": -52938682,
-    "case_violations": 73,
-    "dominance_violations": 100,
+    "aggregate_utility_gp": -55142005,
+    "case_violations": 133,
+    "dominance_violations": 128,
     "hard_invariants_pass": false
   },
   "violations": [
@@ -814,6 +828,606 @@
       "item": 8780,
       "actual": 311264,
       "limit": 300000
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "attendance": "attended",
+      "slot_cap": 1,
+      "cash_gp": 10000000,
+      "rule": "capital_efficiency",
+      "item": 575,
+      "actual": 0.00049922,
+      "minimum": 0.0005
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "attendance": "attended",
+      "slot_cap": 1,
+      "cash_gp": 30000000,
+      "rule": "capital_efficiency",
+      "item": 575,
+      "actual": 0.00043429,
+      "minimum": 0.0005
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "attendance": "attended",
+      "slot_cap": 1,
+      "cash_gp": 70000000,
+      "rule": "capital_efficiency",
+      "item": 575,
+      "actual": 0.00043429,
+      "minimum": 0.0005
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "attendance": "attended",
+      "slot_cap": 1,
+      "cash_gp": 100000000,
+      "rule": "capital_efficiency",
+      "item": 575,
+      "actual": 0.00043429,
+      "minimum": 0.0005
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "attendance": "attended",
+      "slot_cap": 1,
+      "cash_gp": 250000000,
+      "rule": "capital_efficiency",
+      "item": 575,
+      "actual": 0.00043429,
+      "minimum": 0.0005
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "attendance": "attended",
+      "slot_cap": 4,
+      "cash_gp": 10000000,
+      "rule": "capital_efficiency",
+      "item": 575,
+      "actual": 0.00049922,
+      "minimum": 0.0005
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "attendance": "attended",
+      "slot_cap": 4,
+      "cash_gp": 30000000,
+      "rule": "capital_efficiency",
+      "item": 575,
+      "actual": 0.00043429,
+      "minimum": 0.0005
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "attendance": "attended",
+      "slot_cap": 4,
+      "cash_gp": 30000000,
+      "rule": "capital_efficiency",
+      "item": 26997,
+      "actual": 0.00025261,
+      "minimum": 0.0005
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "attendance": "attended",
+      "slot_cap": 4,
+      "cash_gp": 30000000,
+      "rule": "capital_efficiency",
+      "item": 31910,
+      "actual": 0.00048565,
+      "minimum": 0.0005
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "attendance": "attended",
+      "slot_cap": 4,
+      "cash_gp": 70000000,
+      "rule": "capital_efficiency",
+      "item": 575,
+      "actual": 0.00043429,
+      "minimum": 0.0005
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "attendance": "attended",
+      "slot_cap": 4,
+      "cash_gp": 70000000,
+      "rule": "capital_efficiency",
+      "item": 26997,
+      "actual": 0.00025261,
+      "minimum": 0.0005
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "attendance": "attended",
+      "slot_cap": 4,
+      "cash_gp": 70000000,
+      "rule": "capital_efficiency",
+      "item": 855,
+      "actual": 0.00019223,
+      "minimum": 0.0005
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "attendance": "attended",
+      "slot_cap": 4,
+      "cash_gp": 100000000,
+      "rule": "capital_efficiency",
+      "item": 575,
+      "actual": 0.00043429,
+      "minimum": 0.0005
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "attendance": "attended",
+      "slot_cap": 4,
+      "cash_gp": 100000000,
+      "rule": "capital_efficiency",
+      "item": 26997,
+      "actual": 0.00025261,
+      "minimum": 0.0005
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "attendance": "attended",
+      "slot_cap": 4,
+      "cash_gp": 100000000,
+      "rule": "capital_efficiency",
+      "item": 855,
+      "actual": 0.00019223,
+      "minimum": 0.0005
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "attendance": "attended",
+      "slot_cap": 4,
+      "cash_gp": 250000000,
+      "rule": "capital_efficiency",
+      "item": 575,
+      "actual": 0.00043429,
+      "minimum": 0.0005
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "attendance": "attended",
+      "slot_cap": 8,
+      "cash_gp": 10000000,
+      "rule": "capital_efficiency",
+      "item": 575,
+      "actual": 0.00049922,
+      "minimum": 0.0005
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "attendance": "attended",
+      "slot_cap": 8,
+      "cash_gp": 30000000,
+      "rule": "capital_efficiency",
+      "item": 575,
+      "actual": 0.00043429,
+      "minimum": 0.0005
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "attendance": "attended",
+      "slot_cap": 8,
+      "cash_gp": 30000000,
+      "rule": "capital_efficiency",
+      "item": 26997,
+      "actual": 0.00025261,
+      "minimum": 0.0005
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "attendance": "attended",
+      "slot_cap": 8,
+      "cash_gp": 30000000,
+      "rule": "capital_efficiency",
+      "item": 31910,
+      "actual": 0.00048565,
+      "minimum": 0.0005
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "attendance": "attended",
+      "slot_cap": 8,
+      "cash_gp": 30000000,
+      "rule": "capital_efficiency",
+      "item": 855,
+      "actual": 0.00027943,
+      "minimum": 0.0005
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "attendance": "attended",
+      "slot_cap": 8,
+      "cash_gp": 70000000,
+      "rule": "capital_efficiency",
+      "item": 575,
+      "actual": 0.00043429,
+      "minimum": 0.0005
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "attendance": "attended",
+      "slot_cap": 8,
+      "cash_gp": 70000000,
+      "rule": "capital_efficiency",
+      "item": 26997,
+      "actual": 0.00025261,
+      "minimum": 0.0005
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "attendance": "attended",
+      "slot_cap": 8,
+      "cash_gp": 70000000,
+      "rule": "capital_efficiency",
+      "item": 855,
+      "actual": 0.00019223,
+      "minimum": 0.0005
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "attendance": "attended",
+      "slot_cap": 8,
+      "cash_gp": 100000000,
+      "rule": "capital_efficiency",
+      "item": 575,
+      "actual": 0.00043429,
+      "minimum": 0.0005
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "attendance": "attended",
+      "slot_cap": 8,
+      "cash_gp": 100000000,
+      "rule": "capital_efficiency",
+      "item": 26997,
+      "actual": 0.00025261,
+      "minimum": 0.0005
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "attendance": "attended",
+      "slot_cap": 8,
+      "cash_gp": 100000000,
+      "rule": "capital_efficiency",
+      "item": 855,
+      "actual": 0.00019223,
+      "minimum": 0.0005
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "attendance": "attended",
+      "slot_cap": 8,
+      "cash_gp": 250000000,
+      "rule": "capital_efficiency",
+      "item": 575,
+      "actual": 0.00043429,
+      "minimum": 0.0005
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "attendance": "away_2h",
+      "slot_cap": 1,
+      "cash_gp": 10000000,
+      "rule": "capital_efficiency",
+      "item": 575,
+      "actual": 0.00049922,
+      "minimum": 0.0005
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "attendance": "away_2h",
+      "slot_cap": 1,
+      "cash_gp": 30000000,
+      "rule": "capital_efficiency",
+      "item": 575,
+      "actual": 0.00043429,
+      "minimum": 0.0005
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "attendance": "away_2h",
+      "slot_cap": 1,
+      "cash_gp": 70000000,
+      "rule": "capital_efficiency",
+      "item": 575,
+      "actual": 0.00043429,
+      "minimum": 0.0005
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "attendance": "away_2h",
+      "slot_cap": 1,
+      "cash_gp": 100000000,
+      "rule": "capital_efficiency",
+      "item": 575,
+      "actual": 0.00043429,
+      "minimum": 0.0005
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "attendance": "away_2h",
+      "slot_cap": 1,
+      "cash_gp": 250000000,
+      "rule": "capital_efficiency",
+      "item": 575,
+      "actual": 0.00043429,
+      "minimum": 0.0005
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "attendance": "away_2h",
+      "slot_cap": 4,
+      "cash_gp": 10000000,
+      "rule": "capital_efficiency",
+      "item": 575,
+      "actual": 0.00049922,
+      "minimum": 0.0005
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "attendance": "away_2h",
+      "slot_cap": 4,
+      "cash_gp": 30000000,
+      "rule": "capital_efficiency",
+      "item": 575,
+      "actual": 0.00043429,
+      "minimum": 0.0005
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "attendance": "away_2h",
+      "slot_cap": 4,
+      "cash_gp": 30000000,
+      "rule": "capital_efficiency",
+      "item": 26997,
+      "actual": 0.00025261,
+      "minimum": 0.0005
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "attendance": "away_2h",
+      "slot_cap": 4,
+      "cash_gp": 30000000,
+      "rule": "capital_efficiency",
+      "item": 31910,
+      "actual": 0.00048565,
+      "minimum": 0.0005
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "attendance": "away_2h",
+      "slot_cap": 4,
+      "cash_gp": 70000000,
+      "rule": "capital_efficiency",
+      "item": 575,
+      "actual": 0.00043429,
+      "minimum": 0.0005
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "attendance": "away_2h",
+      "slot_cap": 4,
+      "cash_gp": 70000000,
+      "rule": "capital_efficiency",
+      "item": 26997,
+      "actual": 0.00025261,
+      "minimum": 0.0005
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "attendance": "away_2h",
+      "slot_cap": 4,
+      "cash_gp": 70000000,
+      "rule": "capital_efficiency",
+      "item": 855,
+      "actual": 0.00019223,
+      "minimum": 0.0005
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "attendance": "away_2h",
+      "slot_cap": 4,
+      "cash_gp": 100000000,
+      "rule": "capital_efficiency",
+      "item": 575,
+      "actual": 0.00043429,
+      "minimum": 0.0005
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "attendance": "away_2h",
+      "slot_cap": 4,
+      "cash_gp": 100000000,
+      "rule": "capital_efficiency",
+      "item": 26997,
+      "actual": 0.00025261,
+      "minimum": 0.0005
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "attendance": "away_2h",
+      "slot_cap": 4,
+      "cash_gp": 100000000,
+      "rule": "capital_efficiency",
+      "item": 855,
+      "actual": 0.00019223,
+      "minimum": 0.0005
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "attendance": "away_2h",
+      "slot_cap": 4,
+      "cash_gp": 250000000,
+      "rule": "capital_efficiency",
+      "item": 575,
+      "actual": 0.00043429,
+      "minimum": 0.0005
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "attendance": "away_2h",
+      "slot_cap": 8,
+      "cash_gp": 10000000,
+      "rule": "capital_efficiency",
+      "item": 575,
+      "actual": 0.00049922,
+      "minimum": 0.0005
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "attendance": "away_2h",
+      "slot_cap": 8,
+      "cash_gp": 30000000,
+      "rule": "capital_efficiency",
+      "item": 575,
+      "actual": 0.00043429,
+      "minimum": 0.0005
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "attendance": "away_2h",
+      "slot_cap": 8,
+      "cash_gp": 30000000,
+      "rule": "capital_efficiency",
+      "item": 26997,
+      "actual": 0.00025261,
+      "minimum": 0.0005
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "attendance": "away_2h",
+      "slot_cap": 8,
+      "cash_gp": 30000000,
+      "rule": "capital_efficiency",
+      "item": 31910,
+      "actual": 0.00048565,
+      "minimum": 0.0005
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "attendance": "away_2h",
+      "slot_cap": 8,
+      "cash_gp": 30000000,
+      "rule": "capital_efficiency",
+      "item": 855,
+      "actual": 0.00027943,
+      "minimum": 0.0005
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "attendance": "away_2h",
+      "slot_cap": 8,
+      "cash_gp": 70000000,
+      "rule": "capital_efficiency",
+      "item": 575,
+      "actual": 0.00043429,
+      "minimum": 0.0005
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "attendance": "away_2h",
+      "slot_cap": 8,
+      "cash_gp": 70000000,
+      "rule": "capital_efficiency",
+      "item": 26997,
+      "actual": 0.00025261,
+      "minimum": 0.0005
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "attendance": "away_2h",
+      "slot_cap": 8,
+      "cash_gp": 70000000,
+      "rule": "capital_efficiency",
+      "item": 855,
+      "actual": 0.00019223,
+      "minimum": 0.0005
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "attendance": "away_2h",
+      "slot_cap": 8,
+      "cash_gp": 100000000,
+      "rule": "capital_efficiency",
+      "item": 575,
+      "actual": 0.00043429,
+      "minimum": 0.0005
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "attendance": "away_2h",
+      "slot_cap": 8,
+      "cash_gp": 100000000,
+      "rule": "capital_efficiency",
+      "item": 26997,
+      "actual": 0.00025261,
+      "minimum": 0.0005
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "attendance": "away_2h",
+      "slot_cap": 8,
+      "cash_gp": 100000000,
+      "rule": "capital_efficiency",
+      "item": 855,
+      "actual": 0.00019223,
+      "minimum": 0.0005
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "attendance": "away_2h",
+      "slot_cap": 8,
+      "cash_gp": 250000000,
+      "rule": "capital_efficiency",
+      "item": 575,
+      "actual": 0.00043429,
+      "minimum": 0.0005
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "attendance": "overnight",
+      "slot_cap": 4,
+      "cash_gp": 30000000,
+      "rule": "capital_efficiency",
+      "item": 19629,
+      "actual": 0.00026631,
+      "minimum": 0.0005
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "attendance": "overnight",
+      "slot_cap": 4,
+      "cash_gp": 70000000,
+      "rule": "capital_efficiency",
+      "item": 19629,
+      "actual": 0.00026631,
+      "minimum": 0.0005
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "attendance": "overnight",
+      "slot_cap": 8,
+      "cash_gp": 30000000,
+      "rule": "capital_efficiency",
+      "item": 19629,
+      "actual": 0.00026631,
+      "minimum": 0.0005
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "attendance": "overnight",
+      "slot_cap": 8,
+      "cash_gp": 70000000,
+      "rule": "capital_efficiency",
+      "item": 19629,
+      "actual": 0.00026631,
+      "minimum": 0.0005
     },
     {
       "rule": "cash_dominance_actual_profit_gp",
@@ -1813,6 +2427,286 @@
       "lower_cash": 250000000,
       "higher_cash": 1000000000,
       "lower_value": 337450,
+      "higher_value": 0
+    },
+    {
+      "rule": "cash_dominance_expected_profit_gp",
+      "fixture": "wiki_cache_2026-07-26",
+      "attendance": "attended",
+      "slot_cap": 1,
+      "lower_cash": 250000000,
+      "higher_cash": 1000000000,
+      "lower_value": 59904,
+      "higher_value": 0
+    },
+    {
+      "rule": "cash_dominance_actual_profit_gp",
+      "fixture": "wiki_cache_2026-07-26",
+      "attendance": "attended",
+      "slot_cap": 4,
+      "lower_cash": 10000000,
+      "higher_cash": 30000000,
+      "lower_value": 0,
+      "higher_value": -5681
+    },
+    {
+      "rule": "cash_dominance_actual_profit_gp",
+      "fixture": "wiki_cache_2026-07-26",
+      "attendance": "attended",
+      "slot_cap": 4,
+      "lower_cash": 30000000,
+      "higher_cash": 70000000,
+      "lower_value": -5681,
+      "higher_value": -10933
+    },
+    {
+      "rule": "cash_dominance_actual_profit_gp",
+      "fixture": "wiki_cache_2026-07-26",
+      "attendance": "attended",
+      "slot_cap": 4,
+      "lower_cash": 70000000,
+      "higher_cash": 100000000,
+      "lower_value": -10933,
+      "higher_value": -16215
+    },
+    {
+      "rule": "cash_dominance_expected_profit_gp",
+      "fixture": "wiki_cache_2026-07-26",
+      "attendance": "attended",
+      "slot_cap": 4,
+      "lower_cash": 250000000,
+      "higher_cash": 1000000000,
+      "lower_value": 206264,
+      "higher_value": 0
+    },
+    {
+      "rule": "cash_dominance_actual_profit_gp",
+      "fixture": "wiki_cache_2026-07-26",
+      "attendance": "attended",
+      "slot_cap": 8,
+      "lower_cash": 10000000,
+      "higher_cash": 30000000,
+      "lower_value": 0,
+      "higher_value": -5681
+    },
+    {
+      "rule": "cash_dominance_actual_profit_gp",
+      "fixture": "wiki_cache_2026-07-26",
+      "attendance": "attended",
+      "slot_cap": 8,
+      "lower_cash": 30000000,
+      "higher_cash": 70000000,
+      "lower_value": -5681,
+      "higher_value": -7027
+    },
+    {
+      "rule": "cash_dominance_actual_profit_gp",
+      "fixture": "wiki_cache_2026-07-26",
+      "attendance": "attended",
+      "slot_cap": 8,
+      "lower_cash": 70000000,
+      "higher_cash": 100000000,
+      "lower_value": -7027,
+      "higher_value": -16215
+    },
+    {
+      "rule": "cash_dominance_expected_profit_gp",
+      "fixture": "wiki_cache_2026-07-26",
+      "attendance": "attended",
+      "slot_cap": 8,
+      "lower_cash": 100000000,
+      "higher_cash": 250000000,
+      "lower_value": 266384,
+      "higher_value": 206264
+    },
+    {
+      "rule": "cash_dominance_expected_profit_gp",
+      "fixture": "wiki_cache_2026-07-26",
+      "attendance": "attended",
+      "slot_cap": 8,
+      "lower_cash": 250000000,
+      "higher_cash": 1000000000,
+      "lower_value": 206264,
+      "higher_value": 0
+    },
+    {
+      "rule": "cash_dominance_expected_profit_gp",
+      "fixture": "wiki_cache_2026-07-26",
+      "attendance": "away_2h",
+      "slot_cap": 1,
+      "lower_cash": 250000000,
+      "higher_cash": 1000000000,
+      "lower_value": 59904,
+      "higher_value": 0
+    },
+    {
+      "rule": "cash_dominance_actual_profit_gp",
+      "fixture": "wiki_cache_2026-07-26",
+      "attendance": "away_2h",
+      "slot_cap": 4,
+      "lower_cash": 10000000,
+      "higher_cash": 30000000,
+      "lower_value": 0,
+      "higher_value": -5681
+    },
+    {
+      "rule": "cash_dominance_actual_profit_gp",
+      "fixture": "wiki_cache_2026-07-26",
+      "attendance": "away_2h",
+      "slot_cap": 4,
+      "lower_cash": 30000000,
+      "higher_cash": 70000000,
+      "lower_value": -5681,
+      "higher_value": -10933
+    },
+    {
+      "rule": "cash_dominance_actual_profit_gp",
+      "fixture": "wiki_cache_2026-07-26",
+      "attendance": "away_2h",
+      "slot_cap": 4,
+      "lower_cash": 70000000,
+      "higher_cash": 100000000,
+      "lower_value": -10933,
+      "higher_value": -16215
+    },
+    {
+      "rule": "cash_dominance_expected_profit_gp",
+      "fixture": "wiki_cache_2026-07-26",
+      "attendance": "away_2h",
+      "slot_cap": 4,
+      "lower_cash": 250000000,
+      "higher_cash": 1000000000,
+      "lower_value": 206264,
+      "higher_value": 0
+    },
+    {
+      "rule": "cash_dominance_actual_profit_gp",
+      "fixture": "wiki_cache_2026-07-26",
+      "attendance": "away_2h",
+      "slot_cap": 8,
+      "lower_cash": 10000000,
+      "higher_cash": 30000000,
+      "lower_value": 0,
+      "higher_value": -5681
+    },
+    {
+      "rule": "cash_dominance_actual_profit_gp",
+      "fixture": "wiki_cache_2026-07-26",
+      "attendance": "away_2h",
+      "slot_cap": 8,
+      "lower_cash": 30000000,
+      "higher_cash": 70000000,
+      "lower_value": -5681,
+      "higher_value": -7027
+    },
+    {
+      "rule": "cash_dominance_actual_profit_gp",
+      "fixture": "wiki_cache_2026-07-26",
+      "attendance": "away_2h",
+      "slot_cap": 8,
+      "lower_cash": 70000000,
+      "higher_cash": 100000000,
+      "lower_value": -7027,
+      "higher_value": -16215
+    },
+    {
+      "rule": "cash_dominance_expected_profit_gp",
+      "fixture": "wiki_cache_2026-07-26",
+      "attendance": "away_2h",
+      "slot_cap": 8,
+      "lower_cash": 100000000,
+      "higher_cash": 250000000,
+      "lower_value": 266384,
+      "higher_value": 206264
+    },
+    {
+      "rule": "cash_dominance_expected_profit_gp",
+      "fixture": "wiki_cache_2026-07-26",
+      "attendance": "away_2h",
+      "slot_cap": 8,
+      "lower_cash": 250000000,
+      "higher_cash": 1000000000,
+      "lower_value": 206264,
+      "higher_value": 0
+    },
+    {
+      "rule": "cash_dominance_expected_profit_gp",
+      "fixture": "wiki_cache_2026-07-26",
+      "attendance": "overnight",
+      "slot_cap": 1,
+      "lower_cash": 250000000,
+      "higher_cash": 1000000000,
+      "lower_value": 179712,
+      "higher_value": 0
+    },
+    {
+      "rule": "cash_dominance_actual_profit_gp",
+      "fixture": "wiki_cache_2026-07-26",
+      "attendance": "overnight",
+      "slot_cap": 4,
+      "lower_cash": 10000000,
+      "higher_cash": 30000000,
+      "lower_value": 0,
+      "higher_value": -15742
+    },
+    {
+      "rule": "cash_dominance_actual_profit_gp",
+      "fixture": "wiki_cache_2026-07-26",
+      "attendance": "overnight",
+      "slot_cap": 4,
+      "lower_cash": 100000000,
+      "higher_cash": 250000000,
+      "lower_value": -10963,
+      "higher_value": -16215
+    },
+    {
+      "rule": "cash_dominance_expected_profit_gp",
+      "fixture": "wiki_cache_2026-07-26",
+      "attendance": "overnight",
+      "slot_cap": 4,
+      "lower_cash": 250000000,
+      "higher_cash": 1000000000,
+      "lower_value": 452121,
+      "higher_value": 0
+    },
+    {
+      "rule": "cash_dominance_actual_profit_gp",
+      "fixture": "wiki_cache_2026-07-26",
+      "attendance": "overnight",
+      "slot_cap": 8,
+      "lower_cash": 10000000,
+      "higher_cash": 30000000,
+      "lower_value": 0,
+      "higher_value": -5208
+    },
+    {
+      "rule": "cash_dominance_actual_profit_gp",
+      "fixture": "wiki_cache_2026-07-26",
+      "attendance": "overnight",
+      "slot_cap": 8,
+      "lower_cash": 70000000,
+      "higher_cash": 100000000,
+      "lower_value": -5208,
+      "higher_value": -14988
+    },
+    {
+      "rule": "cash_dominance_actual_profit_gp",
+      "fixture": "wiki_cache_2026-07-26",
+      "attendance": "overnight",
+      "slot_cap": 8,
+      "lower_cash": 100000000,
+      "higher_cash": 250000000,
+      "lower_value": -14988,
+      "higher_value": -53812
+    },
+    {
+      "rule": "cash_dominance_expected_profit_gp",
+      "fixture": "wiki_cache_2026-07-26",
+      "attendance": "overnight",
+      "slot_cap": 8,
+      "lower_cash": 250000000,
+      "higher_cash": 1000000000,
+      "lower_value": 717293,
       "higher_value": 0
     }
   ],
@@ -19896,6 +20790,3831 @@
       "fixture": "wiki_cache_2026-07-22",
       "source": "real_market.json.gz",
       "seed": 20260722,
+      "regime": "observed",
+      "attendance": "overnight",
+      "away_hours": 12,
+      "slot_cap": 8,
+      "cash_gp": 1000000000,
+      "selected_item_ids": [],
+      "selected_items": [],
+      "orders": [],
+      "planned_capital_gp": 0,
+      "expected_profit_gp": 0,
+      "actual_profit_gp": 0,
+      "capital_hours": 0,
+      "utility_gp": 0,
+      "violations": []
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "source": "real_market_2026-07-26.json.gz",
+      "seed": 20260726,
+      "regime": "observed",
+      "attendance": "attended",
+      "away_hours": null,
+      "slot_cap": 1,
+      "cash_gp": 10000000,
+      "selected_item_ids": [
+        575
+      ],
+      "selected_items": [
+        "Earth orb"
+      ],
+      "orders": [
+        {
+          "id": 575,
+          "name": "Earth orb",
+          "strategy": "patient",
+          "posted_capital_gp": 9999619,
+          "expected_profit_gp": 59904,
+          "filled_qty": 0,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 0,
+          "capital_hours": 39998476,
+          "fill_rate": 0.0,
+          "expected_return_per_posted_capital_hour": 0.00049922
+        }
+      ],
+      "planned_capital_gp": 9999619,
+      "expected_profit_gp": 59904,
+      "actual_profit_gp": 0,
+      "capital_hours": 39998476,
+      "utility_gp": -19999,
+      "violations": [
+        {
+          "rule": "capital_efficiency",
+          "item": 575,
+          "actual": 0.00049922,
+          "minimum": 0.0005
+        }
+      ]
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "source": "real_market_2026-07-26.json.gz",
+      "seed": 20260726,
+      "regime": "observed",
+      "attendance": "attended",
+      "away_hours": null,
+      "slot_cap": 1,
+      "cash_gp": 30000000,
+      "selected_item_ids": [
+        575
+      ],
+      "selected_items": [
+        "Earth orb"
+      ],
+      "orders": [
+        {
+          "id": 575,
+          "name": "Earth orb",
+          "strategy": "patient",
+          "posted_capital_gp": 11494656,
+          "expected_profit_gp": 59904,
+          "filled_qty": 0,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 0,
+          "capital_hours": 45978624,
+          "fill_rate": 0.0,
+          "expected_return_per_posted_capital_hour": 0.00043429
+        }
+      ],
+      "planned_capital_gp": 11494656,
+      "expected_profit_gp": 59904,
+      "actual_profit_gp": 0,
+      "capital_hours": 45978624,
+      "utility_gp": -22989,
+      "violations": [
+        {
+          "rule": "capital_efficiency",
+          "item": 575,
+          "actual": 0.00043429,
+          "minimum": 0.0005
+        }
+      ]
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "source": "real_market_2026-07-26.json.gz",
+      "seed": 20260726,
+      "regime": "observed",
+      "attendance": "attended",
+      "away_hours": null,
+      "slot_cap": 1,
+      "cash_gp": 70000000,
+      "selected_item_ids": [
+        575
+      ],
+      "selected_items": [
+        "Earth orb"
+      ],
+      "orders": [
+        {
+          "id": 575,
+          "name": "Earth orb",
+          "strategy": "patient",
+          "posted_capital_gp": 11494656,
+          "expected_profit_gp": 59904,
+          "filled_qty": 0,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 0,
+          "capital_hours": 45978624,
+          "fill_rate": 0.0,
+          "expected_return_per_posted_capital_hour": 0.00043429
+        }
+      ],
+      "planned_capital_gp": 11494656,
+      "expected_profit_gp": 59904,
+      "actual_profit_gp": 0,
+      "capital_hours": 45978624,
+      "utility_gp": -22989,
+      "violations": [
+        {
+          "rule": "capital_efficiency",
+          "item": 575,
+          "actual": 0.00043429,
+          "minimum": 0.0005
+        }
+      ]
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "source": "real_market_2026-07-26.json.gz",
+      "seed": 20260726,
+      "regime": "observed",
+      "attendance": "attended",
+      "away_hours": null,
+      "slot_cap": 1,
+      "cash_gp": 100000000,
+      "selected_item_ids": [
+        575
+      ],
+      "selected_items": [
+        "Earth orb"
+      ],
+      "orders": [
+        {
+          "id": 575,
+          "name": "Earth orb",
+          "strategy": "patient",
+          "posted_capital_gp": 11494656,
+          "expected_profit_gp": 59904,
+          "filled_qty": 0,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 0,
+          "capital_hours": 45978624,
+          "fill_rate": 0.0,
+          "expected_return_per_posted_capital_hour": 0.00043429
+        }
+      ],
+      "planned_capital_gp": 11494656,
+      "expected_profit_gp": 59904,
+      "actual_profit_gp": 0,
+      "capital_hours": 45978624,
+      "utility_gp": -22989,
+      "violations": [
+        {
+          "rule": "capital_efficiency",
+          "item": 575,
+          "actual": 0.00043429,
+          "minimum": 0.0005
+        }
+      ]
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "source": "real_market_2026-07-26.json.gz",
+      "seed": 20260726,
+      "regime": "observed",
+      "attendance": "attended",
+      "away_hours": null,
+      "slot_cap": 1,
+      "cash_gp": 250000000,
+      "selected_item_ids": [
+        575
+      ],
+      "selected_items": [
+        "Earth orb"
+      ],
+      "orders": [
+        {
+          "id": 575,
+          "name": "Earth orb",
+          "strategy": "patient",
+          "posted_capital_gp": 11494656,
+          "expected_profit_gp": 59904,
+          "filled_qty": 0,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 0,
+          "capital_hours": 45978624,
+          "fill_rate": 0.0,
+          "expected_return_per_posted_capital_hour": 0.00043429
+        }
+      ],
+      "planned_capital_gp": 11494656,
+      "expected_profit_gp": 59904,
+      "actual_profit_gp": 0,
+      "capital_hours": 45978624,
+      "utility_gp": -22989,
+      "violations": [
+        {
+          "rule": "capital_efficiency",
+          "item": 575,
+          "actual": 0.00043429,
+          "minimum": 0.0005
+        }
+      ]
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "source": "real_market_2026-07-26.json.gz",
+      "seed": 20260726,
+      "regime": "observed",
+      "attendance": "attended",
+      "away_hours": null,
+      "slot_cap": 1,
+      "cash_gp": 1000000000,
+      "selected_item_ids": [],
+      "selected_items": [],
+      "orders": [],
+      "planned_capital_gp": 0,
+      "expected_profit_gp": 0,
+      "actual_profit_gp": 0,
+      "capital_hours": 0,
+      "utility_gp": 0,
+      "violations": []
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "source": "real_market_2026-07-26.json.gz",
+      "seed": 20260726,
+      "regime": "observed",
+      "attendance": "attended",
+      "away_hours": null,
+      "slot_cap": 4,
+      "cash_gp": 10000000,
+      "selected_item_ids": [
+        575
+      ],
+      "selected_items": [
+        "Earth orb"
+      ],
+      "orders": [
+        {
+          "id": 575,
+          "name": "Earth orb",
+          "strategy": "patient",
+          "posted_capital_gp": 9999619,
+          "expected_profit_gp": 59904,
+          "filled_qty": 0,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 0,
+          "capital_hours": 39998476,
+          "fill_rate": 0.0,
+          "expected_return_per_posted_capital_hour": 0.00049922
+        }
+      ],
+      "planned_capital_gp": 9999619,
+      "expected_profit_gp": 59904,
+      "actual_profit_gp": 0,
+      "capital_hours": 39998476,
+      "utility_gp": -19999,
+      "violations": [
+        {
+          "rule": "capital_efficiency",
+          "item": 575,
+          "actual": 0.00049922,
+          "minimum": 0.0005
+        }
+      ]
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "source": "real_market_2026-07-26.json.gz",
+      "seed": 20260726,
+      "regime": "observed",
+      "attendance": "attended",
+      "away_hours": null,
+      "slot_cap": 4,
+      "cash_gp": 30000000,
+      "selected_item_ids": [
+        575,
+        26997,
+        6328,
+        31910
+      ],
+      "selected_items": [
+        "Earth orb",
+        "Ensouled hellhound head",
+        "Snakeskin boots",
+        "Mithril cannonball"
+      ],
+      "orders": [
+        {
+          "id": 575,
+          "name": "Earth orb",
+          "strategy": "patient",
+          "posted_capital_gp": 11494656,
+          "expected_profit_gp": 59904,
+          "filled_qty": 0,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 0,
+          "capital_hours": 45978624,
+          "fill_rate": 0.0,
+          "expected_return_per_posted_capital_hour": 0.00043429
+        },
+        {
+          "id": 26997,
+          "name": "Ensouled hellhound head",
+          "strategy": "patient",
+          "posted_capital_gp": 10805200,
+          "expected_profit_gp": 32754,
+          "filled_qty": 115,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 115,
+          "actual_profit_gp": -16215,
+          "forced_exit_price": 3325,
+          "capital_hours": 46348800,
+          "fill_rate": 0.0362,
+          "expected_return_per_posted_capital_hour": 0.00025261
+        },
+        {
+          "id": 6328,
+          "name": "Snakeskin boots",
+          "strategy": "patient",
+          "posted_capital_gp": 31625,
+          "expected_profit_gp": 14688,
+          "filled_qty": 38,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 38,
+          "actual_profit_gp": 5282,
+          "forced_exit_price": 399,
+          "capital_hours": 203412,
+          "fill_rate": 0.304,
+          "expected_return_per_posted_capital_hour": 0.03870356
+        },
+        {
+          "id": 31910,
+          "name": "Mithril cannonball",
+          "strategy": "patient",
+          "posted_capital_gp": 1551000,
+          "expected_profit_gp": 9039,
+          "filled_qty": 404,
+          "target_sold_qty": 404,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 5252,
+          "forced_exit_price": null,
+          "capital_hours": 6659712.0,
+          "fill_rate": 0.0367,
+          "expected_return_per_posted_capital_hour": 0.00048565
+        }
+      ],
+      "planned_capital_gp": 23882481,
+      "expected_profit_gp": 116385,
+      "actual_profit_gp": -5681,
+      "capital_hours": 99190548.0,
+      "utility_gp": -55276,
+      "violations": [
+        {
+          "rule": "capital_efficiency",
+          "item": 575,
+          "actual": 0.00043429,
+          "minimum": 0.0005
+        },
+        {
+          "rule": "capital_efficiency",
+          "item": 26997,
+          "actual": 0.00025261,
+          "minimum": 0.0005
+        },
+        {
+          "rule": "capital_efficiency",
+          "item": 31910,
+          "actual": 0.00048565,
+          "minimum": 0.0005
+        }
+      ]
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "source": "real_market_2026-07-26.json.gz",
+      "seed": 20260726,
+      "regime": "observed",
+      "attendance": "attended",
+      "away_hours": null,
+      "slot_cap": 4,
+      "cash_gp": 70000000,
+      "selected_item_ids": [
+        575,
+        26997,
+        6328,
+        855
+      ],
+      "selected_items": [
+        "Earth orb",
+        "Ensouled hellhound head",
+        "Snakeskin boots",
+        "Yew longbow"
+      ],
+      "orders": [
+        {
+          "id": 575,
+          "name": "Earth orb",
+          "strategy": "patient",
+          "posted_capital_gp": 11494656,
+          "expected_profit_gp": 59904,
+          "filled_qty": 0,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 0,
+          "capital_hours": 45978624,
+          "fill_rate": 0.0,
+          "expected_return_per_posted_capital_hour": 0.00043429
+        },
+        {
+          "id": 26997,
+          "name": "Ensouled hellhound head",
+          "strategy": "patient",
+          "posted_capital_gp": 10805200,
+          "expected_profit_gp": 32754,
+          "filled_qty": 115,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 115,
+          "actual_profit_gp": -16215,
+          "forced_exit_price": 3325,
+          "capital_hours": 46348800,
+          "fill_rate": 0.0362,
+          "expected_return_per_posted_capital_hour": 0.00025261
+        },
+        {
+          "id": 6328,
+          "name": "Snakeskin boots",
+          "strategy": "patient",
+          "posted_capital_gp": 31625,
+          "expected_profit_gp": 14688,
+          "filled_qty": 38,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 38,
+          "actual_profit_gp": 5282,
+          "forced_exit_price": 399,
+          "capital_hours": 203412,
+          "fill_rate": 0.304,
+          "expected_return_per_posted_capital_hour": 0.03870356
+        },
+        {
+          "id": 855,
+          "name": "Yew longbow",
+          "strategy": "patient",
+          "posted_capital_gp": 8892000,
+          "expected_profit_gp": 20512,
+          "filled_qty": 0,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 0,
+          "capital_hours": 35568000,
+          "fill_rate": 0.0,
+          "expected_return_per_posted_capital_hour": 0.00019223
+        }
+      ],
+      "planned_capital_gp": 31223481,
+      "expected_profit_gp": 127858,
+      "actual_profit_gp": -10933,
+      "capital_hours": 128098836,
+      "utility_gp": -74982,
+      "violations": [
+        {
+          "rule": "capital_efficiency",
+          "item": 575,
+          "actual": 0.00043429,
+          "minimum": 0.0005
+        },
+        {
+          "rule": "capital_efficiency",
+          "item": 26997,
+          "actual": 0.00025261,
+          "minimum": 0.0005
+        },
+        {
+          "rule": "capital_efficiency",
+          "item": 855,
+          "actual": 0.00019223,
+          "minimum": 0.0005
+        }
+      ]
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "source": "real_market_2026-07-26.json.gz",
+      "seed": 20260726,
+      "regime": "observed",
+      "attendance": "attended",
+      "away_hours": null,
+      "slot_cap": 4,
+      "cash_gp": 100000000,
+      "selected_item_ids": [
+        575,
+        26997,
+        855,
+        10828
+      ],
+      "selected_items": [
+        "Earth orb",
+        "Ensouled hellhound head",
+        "Yew longbow",
+        "Helm of neitiznot"
+      ],
+      "orders": [
+        {
+          "id": 575,
+          "name": "Earth orb",
+          "strategy": "patient",
+          "posted_capital_gp": 11494656,
+          "expected_profit_gp": 59904,
+          "filled_qty": 0,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 0,
+          "capital_hours": 45978624,
+          "fill_rate": 0.0,
+          "expected_return_per_posted_capital_hour": 0.00043429
+        },
+        {
+          "id": 26997,
+          "name": "Ensouled hellhound head",
+          "strategy": "patient",
+          "posted_capital_gp": 10805200,
+          "expected_profit_gp": 32754,
+          "filled_qty": 115,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 115,
+          "actual_profit_gp": -16215,
+          "forced_exit_price": 3325,
+          "capital_hours": 46348800,
+          "fill_rate": 0.0362,
+          "expected_return_per_posted_capital_hour": 0.00025261
+        },
+        {
+          "id": 855,
+          "name": "Yew longbow",
+          "strategy": "patient",
+          "posted_capital_gp": 8892000,
+          "expected_profit_gp": 20512,
+          "filled_qty": 0,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 0,
+          "capital_hours": 35568000,
+          "fill_rate": 0.0,
+          "expected_return_per_posted_capital_hour": 0.00019223
+        },
+        {
+          "id": 10828,
+          "name": "Helm of neitiznot",
+          "strategy": "patient-probe",
+          "posted_capital_gp": 3319680,
+          "expected_profit_gp": 84420,
+          "filled_qty": 0,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 0,
+          "capital_hours": 13278720,
+          "fill_rate": 0.0,
+          "expected_return_per_posted_capital_hour": 0.00211918
+        }
+      ],
+      "planned_capital_gp": 34511536,
+      "expected_profit_gp": 197590,
+      "actual_profit_gp": -16215,
+      "capital_hours": 141174144,
+      "utility_gp": -86802,
+      "violations": [
+        {
+          "rule": "capital_efficiency",
+          "item": 575,
+          "actual": 0.00043429,
+          "minimum": 0.0005
+        },
+        {
+          "rule": "capital_efficiency",
+          "item": 26997,
+          "actual": 0.00025261,
+          "minimum": 0.0005
+        },
+        {
+          "rule": "capital_efficiency",
+          "item": 855,
+          "actual": 0.00019223,
+          "minimum": 0.0005
+        }
+      ]
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "source": "real_market_2026-07-26.json.gz",
+      "seed": 20260726,
+      "regime": "observed",
+      "attendance": "attended",
+      "away_hours": null,
+      "slot_cap": 4,
+      "cash_gp": 250000000,
+      "selected_item_ids": [
+        575,
+        10828,
+        4675
+      ],
+      "selected_items": [
+        "Earth orb",
+        "Helm of neitiznot",
+        "Ancient staff"
+      ],
+      "orders": [
+        {
+          "id": 575,
+          "name": "Earth orb",
+          "strategy": "patient",
+          "posted_capital_gp": 11494656,
+          "expected_profit_gp": 59904,
+          "filled_qty": 0,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 0,
+          "capital_hours": 45978624,
+          "fill_rate": 0.0,
+          "expected_return_per_posted_capital_hour": 0.00043429
+        },
+        {
+          "id": 10828,
+          "name": "Helm of neitiznot",
+          "strategy": "patient-probe",
+          "posted_capital_gp": 3319680,
+          "expected_profit_gp": 84420,
+          "filled_qty": 0,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 0,
+          "capital_hours": 13278720,
+          "fill_rate": 0.0,
+          "expected_return_per_posted_capital_hour": 0.00211918
+        },
+        {
+          "id": 4675,
+          "name": "Ancient staff",
+          "strategy": "patient-probe",
+          "posted_capital_gp": 2257162,
+          "expected_profit_gp": 61940,
+          "filled_qty": 0,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 0,
+          "capital_hours": 9028648,
+          "fill_rate": 0.0,
+          "expected_return_per_posted_capital_hour": 0.00228679
+        }
+      ],
+      "planned_capital_gp": 17071498,
+      "expected_profit_gp": 206264,
+      "actual_profit_gp": 0,
+      "capital_hours": 68285992,
+      "utility_gp": -34143,
+      "violations": [
+        {
+          "rule": "capital_efficiency",
+          "item": 575,
+          "actual": 0.00043429,
+          "minimum": 0.0005
+        }
+      ]
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "source": "real_market_2026-07-26.json.gz",
+      "seed": 20260726,
+      "regime": "observed",
+      "attendance": "attended",
+      "away_hours": null,
+      "slot_cap": 4,
+      "cash_gp": 1000000000,
+      "selected_item_ids": [],
+      "selected_items": [],
+      "orders": [],
+      "planned_capital_gp": 0,
+      "expected_profit_gp": 0,
+      "actual_profit_gp": 0,
+      "capital_hours": 0,
+      "utility_gp": 0,
+      "violations": []
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "source": "real_market_2026-07-26.json.gz",
+      "seed": 20260726,
+      "regime": "observed",
+      "attendance": "attended",
+      "away_hours": null,
+      "slot_cap": 8,
+      "cash_gp": 10000000,
+      "selected_item_ids": [
+        575
+      ],
+      "selected_items": [
+        "Earth orb"
+      ],
+      "orders": [
+        {
+          "id": 575,
+          "name": "Earth orb",
+          "strategy": "patient",
+          "posted_capital_gp": 9999619,
+          "expected_profit_gp": 59904,
+          "filled_qty": 0,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 0,
+          "capital_hours": 39998476,
+          "fill_rate": 0.0,
+          "expected_return_per_posted_capital_hour": 0.00049922
+        }
+      ],
+      "planned_capital_gp": 9999619,
+      "expected_profit_gp": 59904,
+      "actual_profit_gp": 0,
+      "capital_hours": 39998476,
+      "utility_gp": -19999,
+      "violations": [
+        {
+          "rule": "capital_efficiency",
+          "item": 575,
+          "actual": 0.00049922,
+          "minimum": 0.0005
+        }
+      ]
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "source": "real_market_2026-07-26.json.gz",
+      "seed": 20260726,
+      "regime": "observed",
+      "attendance": "attended",
+      "away_hours": null,
+      "slot_cap": 8,
+      "cash_gp": 30000000,
+      "selected_item_ids": [
+        575,
+        26997,
+        6328,
+        31910,
+        855
+      ],
+      "selected_items": [
+        "Earth orb",
+        "Ensouled hellhound head",
+        "Snakeskin boots",
+        "Mithril cannonball",
+        "Yew longbow"
+      ],
+      "orders": [
+        {
+          "id": 575,
+          "name": "Earth orb",
+          "strategy": "patient",
+          "posted_capital_gp": 11494656,
+          "expected_profit_gp": 59904,
+          "filled_qty": 0,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 0,
+          "capital_hours": 45978624,
+          "fill_rate": 0.0,
+          "expected_return_per_posted_capital_hour": 0.00043429
+        },
+        {
+          "id": 26997,
+          "name": "Ensouled hellhound head",
+          "strategy": "patient",
+          "posted_capital_gp": 10805200,
+          "expected_profit_gp": 32754,
+          "filled_qty": 115,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 115,
+          "actual_profit_gp": -16215,
+          "forced_exit_price": 3325,
+          "capital_hours": 46348800,
+          "fill_rate": 0.0362,
+          "expected_return_per_posted_capital_hour": 0.00025261
+        },
+        {
+          "id": 6328,
+          "name": "Snakeskin boots",
+          "strategy": "patient",
+          "posted_capital_gp": 31625,
+          "expected_profit_gp": 14688,
+          "filled_qty": 38,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 38,
+          "actual_profit_gp": 5282,
+          "forced_exit_price": 399,
+          "capital_hours": 203412,
+          "fill_rate": 0.304,
+          "expected_return_per_posted_capital_hour": 0.03870356
+        },
+        {
+          "id": 31910,
+          "name": "Mithril cannonball",
+          "strategy": "patient",
+          "posted_capital_gp": 1551000,
+          "expected_profit_gp": 9039,
+          "filled_qty": 404,
+          "target_sold_qty": 404,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 5252,
+          "forced_exit_price": null,
+          "capital_hours": 6659712.0,
+          "fill_rate": 0.0367,
+          "expected_return_per_posted_capital_hour": 0.00048565
+        },
+        {
+          "id": 855,
+          "name": "Yew longbow",
+          "strategy": "patient",
+          "posted_capital_gp": 6117202,
+          "expected_profit_gp": 20512,
+          "filled_qty": 0,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 0,
+          "capital_hours": 24468808,
+          "fill_rate": 0.0,
+          "expected_return_per_posted_capital_hour": 0.00027943
+        }
+      ],
+      "planned_capital_gp": 29999683,
+      "expected_profit_gp": 136897,
+      "actual_profit_gp": -5681,
+      "capital_hours": 123659356.0,
+      "utility_gp": -67511,
+      "violations": [
+        {
+          "rule": "capital_efficiency",
+          "item": 575,
+          "actual": 0.00043429,
+          "minimum": 0.0005
+        },
+        {
+          "rule": "capital_efficiency",
+          "item": 26997,
+          "actual": 0.00025261,
+          "minimum": 0.0005
+        },
+        {
+          "rule": "capital_efficiency",
+          "item": 31910,
+          "actual": 0.00048565,
+          "minimum": 0.0005
+        },
+        {
+          "rule": "capital_efficiency",
+          "item": 855,
+          "actual": 0.00027943,
+          "minimum": 0.0005
+        }
+      ]
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "source": "real_market_2026-07-26.json.gz",
+      "seed": 20260726,
+      "regime": "observed",
+      "attendance": "attended",
+      "away_hours": null,
+      "slot_cap": 8,
+      "cash_gp": 70000000,
+      "selected_item_ids": [
+        575,
+        26997,
+        6328,
+        855,
+        30619,
+        10828,
+        2497
+      ],
+      "selected_items": [
+        "Earth orb",
+        "Ensouled hellhound head",
+        "Snakeskin boots",
+        "Yew longbow",
+        "Bounty supply crate (anglerfish)",
+        "Helm of neitiznot",
+        "Black d'hide chaps"
+      ],
+      "orders": [
+        {
+          "id": 575,
+          "name": "Earth orb",
+          "strategy": "patient",
+          "posted_capital_gp": 11494656,
+          "expected_profit_gp": 59904,
+          "filled_qty": 0,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 0,
+          "capital_hours": 45978624,
+          "fill_rate": 0.0,
+          "expected_return_per_posted_capital_hour": 0.00043429
+        },
+        {
+          "id": 26997,
+          "name": "Ensouled hellhound head",
+          "strategy": "patient",
+          "posted_capital_gp": 10805200,
+          "expected_profit_gp": 32754,
+          "filled_qty": 115,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 115,
+          "actual_profit_gp": -16215,
+          "forced_exit_price": 3325,
+          "capital_hours": 46348800,
+          "fill_rate": 0.0362,
+          "expected_return_per_posted_capital_hour": 0.00025261
+        },
+        {
+          "id": 6328,
+          "name": "Snakeskin boots",
+          "strategy": "patient",
+          "posted_capital_gp": 31625,
+          "expected_profit_gp": 14688,
+          "filled_qty": 38,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 38,
+          "actual_profit_gp": 5282,
+          "forced_exit_price": 399,
+          "capital_hours": 203412,
+          "fill_rate": 0.304,
+          "expected_return_per_posted_capital_hour": 0.03870356
+        },
+        {
+          "id": 855,
+          "name": "Yew longbow",
+          "strategy": "patient",
+          "posted_capital_gp": 8892000,
+          "expected_profit_gp": 20512,
+          "filled_qty": 0,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 0,
+          "capital_hours": 35568000,
+          "fill_rate": 0.0,
+          "expected_return_per_posted_capital_hour": 0.00019223
+        },
+        {
+          "id": 30619,
+          "name": "Bounty supply crate (anglerfish)",
+          "strategy": "patient",
+          "posted_capital_gp": 330300,
+          "expected_profit_gp": 17400,
+          "filled_qty": 0,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 0,
+          "capital_hours": 1321200,
+          "fill_rate": 0.0,
+          "expected_return_per_posted_capital_hour": 0.00438995
+        },
+        {
+          "id": 10828,
+          "name": "Helm of neitiznot",
+          "strategy": "patient-probe",
+          "posted_capital_gp": 3319680,
+          "expected_profit_gp": 84420,
+          "filled_qty": 0,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 0,
+          "capital_hours": 13278720,
+          "fill_rate": 0.0,
+          "expected_return_per_posted_capital_hour": 0.00211918
+        },
+        {
+          "id": 2497,
+          "name": "Black d'hide chaps",
+          "strategy": "patient-probe",
+          "posted_capital_gp": 177612,
+          "expected_profit_gp": 14421,
+          "filled_qty": 14,
+          "target_sold_qty": 14,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 3906,
+          "forced_exit_price": null,
+          "capital_hours": 1059440.0,
+          "fill_rate": 0.2456,
+          "expected_return_per_posted_capital_hour": 0.00676615
+        }
+      ],
+      "planned_capital_gp": 35051073,
+      "expected_profit_gp": 244099,
+      "actual_profit_gp": -7027,
+      "capital_hours": 143758196.0,
+      "utility_gp": -78906,
+      "violations": [
+        {
+          "rule": "capital_efficiency",
+          "item": 575,
+          "actual": 0.00043429,
+          "minimum": 0.0005
+        },
+        {
+          "rule": "capital_efficiency",
+          "item": 26997,
+          "actual": 0.00025261,
+          "minimum": 0.0005
+        },
+        {
+          "rule": "capital_efficiency",
+          "item": 855,
+          "actual": 0.00019223,
+          "minimum": 0.0005
+        }
+      ]
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "source": "real_market_2026-07-26.json.gz",
+      "seed": 20260726,
+      "regime": "observed",
+      "attendance": "attended",
+      "away_hours": null,
+      "slot_cap": 8,
+      "cash_gp": 100000000,
+      "selected_item_ids": [
+        575,
+        26997,
+        855,
+        10828,
+        24585,
+        29110
+      ],
+      "selected_items": [
+        "Earth orb",
+        "Ensouled hellhound head",
+        "Yew longbow",
+        "Helm of neitiznot",
+        "Looting bag note",
+        "Raw pyre fox"
+      ],
+      "orders": [
+        {
+          "id": 575,
+          "name": "Earth orb",
+          "strategy": "patient",
+          "posted_capital_gp": 11494656,
+          "expected_profit_gp": 59904,
+          "filled_qty": 0,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 0,
+          "capital_hours": 45978624,
+          "fill_rate": 0.0,
+          "expected_return_per_posted_capital_hour": 0.00043429
+        },
+        {
+          "id": 26997,
+          "name": "Ensouled hellhound head",
+          "strategy": "patient",
+          "posted_capital_gp": 10805200,
+          "expected_profit_gp": 32754,
+          "filled_qty": 115,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 115,
+          "actual_profit_gp": -16215,
+          "forced_exit_price": 3325,
+          "capital_hours": 46348800,
+          "fill_rate": 0.0362,
+          "expected_return_per_posted_capital_hour": 0.00025261
+        },
+        {
+          "id": 855,
+          "name": "Yew longbow",
+          "strategy": "patient",
+          "posted_capital_gp": 8892000,
+          "expected_profit_gp": 20512,
+          "filled_qty": 0,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 0,
+          "capital_hours": 35568000,
+          "fill_rate": 0.0,
+          "expected_return_per_posted_capital_hour": 0.00019223
+        },
+        {
+          "id": 10828,
+          "name": "Helm of neitiznot",
+          "strategy": "patient-probe",
+          "posted_capital_gp": 3319680,
+          "expected_profit_gp": 84420,
+          "filled_qty": 0,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 0,
+          "capital_hours": 13278720,
+          "fill_rate": 0.0,
+          "expected_return_per_posted_capital_hour": 0.00211918
+        },
+        {
+          "id": 24585,
+          "name": "Looting bag note",
+          "strategy": "patient-probe",
+          "posted_capital_gp": 810252,
+          "expected_profit_gp": 32058,
+          "filled_qty": 0,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 0,
+          "capital_hours": 3241008,
+          "fill_rate": 0.0,
+          "expected_return_per_posted_capital_hour": 0.00329712
+        },
+        {
+          "id": 29110,
+          "name": "Raw pyre fox",
+          "strategy": "patient-probe",
+          "posted_capital_gp": 869200,
+          "expected_profit_gp": 36736,
+          "filled_qty": 0,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 0,
+          "capital_hours": 3476800,
+          "fill_rate": 0.0,
+          "expected_return_per_posted_capital_hour": 0.00352201
+        }
+      ],
+      "planned_capital_gp": 36190988,
+      "expected_profit_gp": 266384,
+      "actual_profit_gp": -16215,
+      "capital_hours": 147891952,
+      "utility_gp": -90161,
+      "violations": [
+        {
+          "rule": "capital_efficiency",
+          "item": 575,
+          "actual": 0.00043429,
+          "minimum": 0.0005
+        },
+        {
+          "rule": "capital_efficiency",
+          "item": 26997,
+          "actual": 0.00025261,
+          "minimum": 0.0005
+        },
+        {
+          "rule": "capital_efficiency",
+          "item": 855,
+          "actual": 0.00019223,
+          "minimum": 0.0005
+        }
+      ]
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "source": "real_market_2026-07-26.json.gz",
+      "seed": 20260726,
+      "regime": "observed",
+      "attendance": "attended",
+      "away_hours": null,
+      "slot_cap": 8,
+      "cash_gp": 250000000,
+      "selected_item_ids": [
+        575,
+        10828,
+        4675
+      ],
+      "selected_items": [
+        "Earth orb",
+        "Helm of neitiznot",
+        "Ancient staff"
+      ],
+      "orders": [
+        {
+          "id": 575,
+          "name": "Earth orb",
+          "strategy": "patient",
+          "posted_capital_gp": 11494656,
+          "expected_profit_gp": 59904,
+          "filled_qty": 0,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 0,
+          "capital_hours": 45978624,
+          "fill_rate": 0.0,
+          "expected_return_per_posted_capital_hour": 0.00043429
+        },
+        {
+          "id": 10828,
+          "name": "Helm of neitiznot",
+          "strategy": "patient-probe",
+          "posted_capital_gp": 3319680,
+          "expected_profit_gp": 84420,
+          "filled_qty": 0,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 0,
+          "capital_hours": 13278720,
+          "fill_rate": 0.0,
+          "expected_return_per_posted_capital_hour": 0.00211918
+        },
+        {
+          "id": 4675,
+          "name": "Ancient staff",
+          "strategy": "patient-probe",
+          "posted_capital_gp": 2257162,
+          "expected_profit_gp": 61940,
+          "filled_qty": 0,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 0,
+          "capital_hours": 9028648,
+          "fill_rate": 0.0,
+          "expected_return_per_posted_capital_hour": 0.00228679
+        }
+      ],
+      "planned_capital_gp": 17071498,
+      "expected_profit_gp": 206264,
+      "actual_profit_gp": 0,
+      "capital_hours": 68285992,
+      "utility_gp": -34143,
+      "violations": [
+        {
+          "rule": "capital_efficiency",
+          "item": 575,
+          "actual": 0.00043429,
+          "minimum": 0.0005
+        }
+      ]
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "source": "real_market_2026-07-26.json.gz",
+      "seed": 20260726,
+      "regime": "observed",
+      "attendance": "attended",
+      "away_hours": null,
+      "slot_cap": 8,
+      "cash_gp": 1000000000,
+      "selected_item_ids": [],
+      "selected_items": [],
+      "orders": [],
+      "planned_capital_gp": 0,
+      "expected_profit_gp": 0,
+      "actual_profit_gp": 0,
+      "capital_hours": 0,
+      "utility_gp": 0,
+      "violations": []
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "source": "real_market_2026-07-26.json.gz",
+      "seed": 20260726,
+      "regime": "observed",
+      "attendance": "away_2h",
+      "away_hours": 2,
+      "slot_cap": 1,
+      "cash_gp": 10000000,
+      "selected_item_ids": [
+        575
+      ],
+      "selected_items": [
+        "Earth orb"
+      ],
+      "orders": [
+        {
+          "id": 575,
+          "name": "Earth orb",
+          "strategy": "patient",
+          "posted_capital_gp": 9999619,
+          "expected_profit_gp": 59904,
+          "filled_qty": 0,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 0,
+          "capital_hours": 39998476,
+          "fill_rate": 0.0,
+          "expected_return_per_posted_capital_hour": 0.00049922
+        }
+      ],
+      "planned_capital_gp": 9999619,
+      "expected_profit_gp": 59904,
+      "actual_profit_gp": 0,
+      "capital_hours": 39998476,
+      "utility_gp": -19999,
+      "violations": [
+        {
+          "rule": "capital_efficiency",
+          "item": 575,
+          "actual": 0.00049922,
+          "minimum": 0.0005
+        }
+      ]
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "source": "real_market_2026-07-26.json.gz",
+      "seed": 20260726,
+      "regime": "observed",
+      "attendance": "away_2h",
+      "away_hours": 2,
+      "slot_cap": 1,
+      "cash_gp": 30000000,
+      "selected_item_ids": [
+        575
+      ],
+      "selected_items": [
+        "Earth orb"
+      ],
+      "orders": [
+        {
+          "id": 575,
+          "name": "Earth orb",
+          "strategy": "patient",
+          "posted_capital_gp": 11494656,
+          "expected_profit_gp": 59904,
+          "filled_qty": 0,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 0,
+          "capital_hours": 45978624,
+          "fill_rate": 0.0,
+          "expected_return_per_posted_capital_hour": 0.00043429
+        }
+      ],
+      "planned_capital_gp": 11494656,
+      "expected_profit_gp": 59904,
+      "actual_profit_gp": 0,
+      "capital_hours": 45978624,
+      "utility_gp": -22989,
+      "violations": [
+        {
+          "rule": "capital_efficiency",
+          "item": 575,
+          "actual": 0.00043429,
+          "minimum": 0.0005
+        }
+      ]
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "source": "real_market_2026-07-26.json.gz",
+      "seed": 20260726,
+      "regime": "observed",
+      "attendance": "away_2h",
+      "away_hours": 2,
+      "slot_cap": 1,
+      "cash_gp": 70000000,
+      "selected_item_ids": [
+        575
+      ],
+      "selected_items": [
+        "Earth orb"
+      ],
+      "orders": [
+        {
+          "id": 575,
+          "name": "Earth orb",
+          "strategy": "patient",
+          "posted_capital_gp": 11494656,
+          "expected_profit_gp": 59904,
+          "filled_qty": 0,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 0,
+          "capital_hours": 45978624,
+          "fill_rate": 0.0,
+          "expected_return_per_posted_capital_hour": 0.00043429
+        }
+      ],
+      "planned_capital_gp": 11494656,
+      "expected_profit_gp": 59904,
+      "actual_profit_gp": 0,
+      "capital_hours": 45978624,
+      "utility_gp": -22989,
+      "violations": [
+        {
+          "rule": "capital_efficiency",
+          "item": 575,
+          "actual": 0.00043429,
+          "minimum": 0.0005
+        }
+      ]
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "source": "real_market_2026-07-26.json.gz",
+      "seed": 20260726,
+      "regime": "observed",
+      "attendance": "away_2h",
+      "away_hours": 2,
+      "slot_cap": 1,
+      "cash_gp": 100000000,
+      "selected_item_ids": [
+        575
+      ],
+      "selected_items": [
+        "Earth orb"
+      ],
+      "orders": [
+        {
+          "id": 575,
+          "name": "Earth orb",
+          "strategy": "patient",
+          "posted_capital_gp": 11494656,
+          "expected_profit_gp": 59904,
+          "filled_qty": 0,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 0,
+          "capital_hours": 45978624,
+          "fill_rate": 0.0,
+          "expected_return_per_posted_capital_hour": 0.00043429
+        }
+      ],
+      "planned_capital_gp": 11494656,
+      "expected_profit_gp": 59904,
+      "actual_profit_gp": 0,
+      "capital_hours": 45978624,
+      "utility_gp": -22989,
+      "violations": [
+        {
+          "rule": "capital_efficiency",
+          "item": 575,
+          "actual": 0.00043429,
+          "minimum": 0.0005
+        }
+      ]
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "source": "real_market_2026-07-26.json.gz",
+      "seed": 20260726,
+      "regime": "observed",
+      "attendance": "away_2h",
+      "away_hours": 2,
+      "slot_cap": 1,
+      "cash_gp": 250000000,
+      "selected_item_ids": [
+        575
+      ],
+      "selected_items": [
+        "Earth orb"
+      ],
+      "orders": [
+        {
+          "id": 575,
+          "name": "Earth orb",
+          "strategy": "patient",
+          "posted_capital_gp": 11494656,
+          "expected_profit_gp": 59904,
+          "filled_qty": 0,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 0,
+          "capital_hours": 45978624,
+          "fill_rate": 0.0,
+          "expected_return_per_posted_capital_hour": 0.00043429
+        }
+      ],
+      "planned_capital_gp": 11494656,
+      "expected_profit_gp": 59904,
+      "actual_profit_gp": 0,
+      "capital_hours": 45978624,
+      "utility_gp": -22989,
+      "violations": [
+        {
+          "rule": "capital_efficiency",
+          "item": 575,
+          "actual": 0.00043429,
+          "minimum": 0.0005
+        }
+      ]
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "source": "real_market_2026-07-26.json.gz",
+      "seed": 20260726,
+      "regime": "observed",
+      "attendance": "away_2h",
+      "away_hours": 2,
+      "slot_cap": 1,
+      "cash_gp": 1000000000,
+      "selected_item_ids": [],
+      "selected_items": [],
+      "orders": [],
+      "planned_capital_gp": 0,
+      "expected_profit_gp": 0,
+      "actual_profit_gp": 0,
+      "capital_hours": 0,
+      "utility_gp": 0,
+      "violations": []
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "source": "real_market_2026-07-26.json.gz",
+      "seed": 20260726,
+      "regime": "observed",
+      "attendance": "away_2h",
+      "away_hours": 2,
+      "slot_cap": 4,
+      "cash_gp": 10000000,
+      "selected_item_ids": [
+        575
+      ],
+      "selected_items": [
+        "Earth orb"
+      ],
+      "orders": [
+        {
+          "id": 575,
+          "name": "Earth orb",
+          "strategy": "patient",
+          "posted_capital_gp": 9999619,
+          "expected_profit_gp": 59904,
+          "filled_qty": 0,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 0,
+          "capital_hours": 39998476,
+          "fill_rate": 0.0,
+          "expected_return_per_posted_capital_hour": 0.00049922
+        }
+      ],
+      "planned_capital_gp": 9999619,
+      "expected_profit_gp": 59904,
+      "actual_profit_gp": 0,
+      "capital_hours": 39998476,
+      "utility_gp": -19999,
+      "violations": [
+        {
+          "rule": "capital_efficiency",
+          "item": 575,
+          "actual": 0.00049922,
+          "minimum": 0.0005
+        }
+      ]
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "source": "real_market_2026-07-26.json.gz",
+      "seed": 20260726,
+      "regime": "observed",
+      "attendance": "away_2h",
+      "away_hours": 2,
+      "slot_cap": 4,
+      "cash_gp": 30000000,
+      "selected_item_ids": [
+        575,
+        26997,
+        6328,
+        31910
+      ],
+      "selected_items": [
+        "Earth orb",
+        "Ensouled hellhound head",
+        "Snakeskin boots",
+        "Mithril cannonball"
+      ],
+      "orders": [
+        {
+          "id": 575,
+          "name": "Earth orb",
+          "strategy": "patient",
+          "posted_capital_gp": 11494656,
+          "expected_profit_gp": 59904,
+          "filled_qty": 0,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 0,
+          "capital_hours": 45978624,
+          "fill_rate": 0.0,
+          "expected_return_per_posted_capital_hour": 0.00043429
+        },
+        {
+          "id": 26997,
+          "name": "Ensouled hellhound head",
+          "strategy": "patient",
+          "posted_capital_gp": 10805200,
+          "expected_profit_gp": 32754,
+          "filled_qty": 115,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 115,
+          "actual_profit_gp": -16215,
+          "forced_exit_price": 3325,
+          "capital_hours": 46348800,
+          "fill_rate": 0.0362,
+          "expected_return_per_posted_capital_hour": 0.00025261
+        },
+        {
+          "id": 6328,
+          "name": "Snakeskin boots",
+          "strategy": "patient",
+          "posted_capital_gp": 31625,
+          "expected_profit_gp": 14688,
+          "filled_qty": 38,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 38,
+          "actual_profit_gp": 5282,
+          "forced_exit_price": 399,
+          "capital_hours": 203412,
+          "fill_rate": 0.304,
+          "expected_return_per_posted_capital_hour": 0.03870356
+        },
+        {
+          "id": 31910,
+          "name": "Mithril cannonball",
+          "strategy": "patient",
+          "posted_capital_gp": 1551000,
+          "expected_profit_gp": 9039,
+          "filled_qty": 404,
+          "target_sold_qty": 404,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 5252,
+          "forced_exit_price": null,
+          "capital_hours": 6659712.0,
+          "fill_rate": 0.0367,
+          "expected_return_per_posted_capital_hour": 0.00048565
+        }
+      ],
+      "planned_capital_gp": 23882481,
+      "expected_profit_gp": 116385,
+      "actual_profit_gp": -5681,
+      "capital_hours": 99190548.0,
+      "utility_gp": -55276,
+      "violations": [
+        {
+          "rule": "capital_efficiency",
+          "item": 575,
+          "actual": 0.00043429,
+          "minimum": 0.0005
+        },
+        {
+          "rule": "capital_efficiency",
+          "item": 26997,
+          "actual": 0.00025261,
+          "minimum": 0.0005
+        },
+        {
+          "rule": "capital_efficiency",
+          "item": 31910,
+          "actual": 0.00048565,
+          "minimum": 0.0005
+        }
+      ]
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "source": "real_market_2026-07-26.json.gz",
+      "seed": 20260726,
+      "regime": "observed",
+      "attendance": "away_2h",
+      "away_hours": 2,
+      "slot_cap": 4,
+      "cash_gp": 70000000,
+      "selected_item_ids": [
+        575,
+        26997,
+        6328,
+        855
+      ],
+      "selected_items": [
+        "Earth orb",
+        "Ensouled hellhound head",
+        "Snakeskin boots",
+        "Yew longbow"
+      ],
+      "orders": [
+        {
+          "id": 575,
+          "name": "Earth orb",
+          "strategy": "patient",
+          "posted_capital_gp": 11494656,
+          "expected_profit_gp": 59904,
+          "filled_qty": 0,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 0,
+          "capital_hours": 45978624,
+          "fill_rate": 0.0,
+          "expected_return_per_posted_capital_hour": 0.00043429
+        },
+        {
+          "id": 26997,
+          "name": "Ensouled hellhound head",
+          "strategy": "patient",
+          "posted_capital_gp": 10805200,
+          "expected_profit_gp": 32754,
+          "filled_qty": 115,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 115,
+          "actual_profit_gp": -16215,
+          "forced_exit_price": 3325,
+          "capital_hours": 46348800,
+          "fill_rate": 0.0362,
+          "expected_return_per_posted_capital_hour": 0.00025261
+        },
+        {
+          "id": 6328,
+          "name": "Snakeskin boots",
+          "strategy": "patient",
+          "posted_capital_gp": 31625,
+          "expected_profit_gp": 14688,
+          "filled_qty": 38,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 38,
+          "actual_profit_gp": 5282,
+          "forced_exit_price": 399,
+          "capital_hours": 203412,
+          "fill_rate": 0.304,
+          "expected_return_per_posted_capital_hour": 0.03870356
+        },
+        {
+          "id": 855,
+          "name": "Yew longbow",
+          "strategy": "patient",
+          "posted_capital_gp": 8892000,
+          "expected_profit_gp": 20512,
+          "filled_qty": 0,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 0,
+          "capital_hours": 35568000,
+          "fill_rate": 0.0,
+          "expected_return_per_posted_capital_hour": 0.00019223
+        }
+      ],
+      "planned_capital_gp": 31223481,
+      "expected_profit_gp": 127858,
+      "actual_profit_gp": -10933,
+      "capital_hours": 128098836,
+      "utility_gp": -74982,
+      "violations": [
+        {
+          "rule": "capital_efficiency",
+          "item": 575,
+          "actual": 0.00043429,
+          "minimum": 0.0005
+        },
+        {
+          "rule": "capital_efficiency",
+          "item": 26997,
+          "actual": 0.00025261,
+          "minimum": 0.0005
+        },
+        {
+          "rule": "capital_efficiency",
+          "item": 855,
+          "actual": 0.00019223,
+          "minimum": 0.0005
+        }
+      ]
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "source": "real_market_2026-07-26.json.gz",
+      "seed": 20260726,
+      "regime": "observed",
+      "attendance": "away_2h",
+      "away_hours": 2,
+      "slot_cap": 4,
+      "cash_gp": 100000000,
+      "selected_item_ids": [
+        575,
+        26997,
+        855,
+        10828
+      ],
+      "selected_items": [
+        "Earth orb",
+        "Ensouled hellhound head",
+        "Yew longbow",
+        "Helm of neitiznot"
+      ],
+      "orders": [
+        {
+          "id": 575,
+          "name": "Earth orb",
+          "strategy": "patient",
+          "posted_capital_gp": 11494656,
+          "expected_profit_gp": 59904,
+          "filled_qty": 0,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 0,
+          "capital_hours": 45978624,
+          "fill_rate": 0.0,
+          "expected_return_per_posted_capital_hour": 0.00043429
+        },
+        {
+          "id": 26997,
+          "name": "Ensouled hellhound head",
+          "strategy": "patient",
+          "posted_capital_gp": 10805200,
+          "expected_profit_gp": 32754,
+          "filled_qty": 115,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 115,
+          "actual_profit_gp": -16215,
+          "forced_exit_price": 3325,
+          "capital_hours": 46348800,
+          "fill_rate": 0.0362,
+          "expected_return_per_posted_capital_hour": 0.00025261
+        },
+        {
+          "id": 855,
+          "name": "Yew longbow",
+          "strategy": "patient",
+          "posted_capital_gp": 8892000,
+          "expected_profit_gp": 20512,
+          "filled_qty": 0,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 0,
+          "capital_hours": 35568000,
+          "fill_rate": 0.0,
+          "expected_return_per_posted_capital_hour": 0.00019223
+        },
+        {
+          "id": 10828,
+          "name": "Helm of neitiznot",
+          "strategy": "patient-probe",
+          "posted_capital_gp": 3319680,
+          "expected_profit_gp": 84420,
+          "filled_qty": 0,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 0,
+          "capital_hours": 13278720,
+          "fill_rate": 0.0,
+          "expected_return_per_posted_capital_hour": 0.00211918
+        }
+      ],
+      "planned_capital_gp": 34511536,
+      "expected_profit_gp": 197590,
+      "actual_profit_gp": -16215,
+      "capital_hours": 141174144,
+      "utility_gp": -86802,
+      "violations": [
+        {
+          "rule": "capital_efficiency",
+          "item": 575,
+          "actual": 0.00043429,
+          "minimum": 0.0005
+        },
+        {
+          "rule": "capital_efficiency",
+          "item": 26997,
+          "actual": 0.00025261,
+          "minimum": 0.0005
+        },
+        {
+          "rule": "capital_efficiency",
+          "item": 855,
+          "actual": 0.00019223,
+          "minimum": 0.0005
+        }
+      ]
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "source": "real_market_2026-07-26.json.gz",
+      "seed": 20260726,
+      "regime": "observed",
+      "attendance": "away_2h",
+      "away_hours": 2,
+      "slot_cap": 4,
+      "cash_gp": 250000000,
+      "selected_item_ids": [
+        575,
+        10828,
+        4675
+      ],
+      "selected_items": [
+        "Earth orb",
+        "Helm of neitiznot",
+        "Ancient staff"
+      ],
+      "orders": [
+        {
+          "id": 575,
+          "name": "Earth orb",
+          "strategy": "patient",
+          "posted_capital_gp": 11494656,
+          "expected_profit_gp": 59904,
+          "filled_qty": 0,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 0,
+          "capital_hours": 45978624,
+          "fill_rate": 0.0,
+          "expected_return_per_posted_capital_hour": 0.00043429
+        },
+        {
+          "id": 10828,
+          "name": "Helm of neitiznot",
+          "strategy": "patient-probe",
+          "posted_capital_gp": 3319680,
+          "expected_profit_gp": 84420,
+          "filled_qty": 0,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 0,
+          "capital_hours": 13278720,
+          "fill_rate": 0.0,
+          "expected_return_per_posted_capital_hour": 0.00211918
+        },
+        {
+          "id": 4675,
+          "name": "Ancient staff",
+          "strategy": "patient-probe",
+          "posted_capital_gp": 2257162,
+          "expected_profit_gp": 61940,
+          "filled_qty": 0,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 0,
+          "capital_hours": 9028648,
+          "fill_rate": 0.0,
+          "expected_return_per_posted_capital_hour": 0.00228679
+        }
+      ],
+      "planned_capital_gp": 17071498,
+      "expected_profit_gp": 206264,
+      "actual_profit_gp": 0,
+      "capital_hours": 68285992,
+      "utility_gp": -34143,
+      "violations": [
+        {
+          "rule": "capital_efficiency",
+          "item": 575,
+          "actual": 0.00043429,
+          "minimum": 0.0005
+        }
+      ]
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "source": "real_market_2026-07-26.json.gz",
+      "seed": 20260726,
+      "regime": "observed",
+      "attendance": "away_2h",
+      "away_hours": 2,
+      "slot_cap": 4,
+      "cash_gp": 1000000000,
+      "selected_item_ids": [],
+      "selected_items": [],
+      "orders": [],
+      "planned_capital_gp": 0,
+      "expected_profit_gp": 0,
+      "actual_profit_gp": 0,
+      "capital_hours": 0,
+      "utility_gp": 0,
+      "violations": []
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "source": "real_market_2026-07-26.json.gz",
+      "seed": 20260726,
+      "regime": "observed",
+      "attendance": "away_2h",
+      "away_hours": 2,
+      "slot_cap": 8,
+      "cash_gp": 10000000,
+      "selected_item_ids": [
+        575
+      ],
+      "selected_items": [
+        "Earth orb"
+      ],
+      "orders": [
+        {
+          "id": 575,
+          "name": "Earth orb",
+          "strategy": "patient",
+          "posted_capital_gp": 9999619,
+          "expected_profit_gp": 59904,
+          "filled_qty": 0,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 0,
+          "capital_hours": 39998476,
+          "fill_rate": 0.0,
+          "expected_return_per_posted_capital_hour": 0.00049922
+        }
+      ],
+      "planned_capital_gp": 9999619,
+      "expected_profit_gp": 59904,
+      "actual_profit_gp": 0,
+      "capital_hours": 39998476,
+      "utility_gp": -19999,
+      "violations": [
+        {
+          "rule": "capital_efficiency",
+          "item": 575,
+          "actual": 0.00049922,
+          "minimum": 0.0005
+        }
+      ]
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "source": "real_market_2026-07-26.json.gz",
+      "seed": 20260726,
+      "regime": "observed",
+      "attendance": "away_2h",
+      "away_hours": 2,
+      "slot_cap": 8,
+      "cash_gp": 30000000,
+      "selected_item_ids": [
+        575,
+        26997,
+        6328,
+        31910,
+        855
+      ],
+      "selected_items": [
+        "Earth orb",
+        "Ensouled hellhound head",
+        "Snakeskin boots",
+        "Mithril cannonball",
+        "Yew longbow"
+      ],
+      "orders": [
+        {
+          "id": 575,
+          "name": "Earth orb",
+          "strategy": "patient",
+          "posted_capital_gp": 11494656,
+          "expected_profit_gp": 59904,
+          "filled_qty": 0,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 0,
+          "capital_hours": 45978624,
+          "fill_rate": 0.0,
+          "expected_return_per_posted_capital_hour": 0.00043429
+        },
+        {
+          "id": 26997,
+          "name": "Ensouled hellhound head",
+          "strategy": "patient",
+          "posted_capital_gp": 10805200,
+          "expected_profit_gp": 32754,
+          "filled_qty": 115,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 115,
+          "actual_profit_gp": -16215,
+          "forced_exit_price": 3325,
+          "capital_hours": 46348800,
+          "fill_rate": 0.0362,
+          "expected_return_per_posted_capital_hour": 0.00025261
+        },
+        {
+          "id": 6328,
+          "name": "Snakeskin boots",
+          "strategy": "patient",
+          "posted_capital_gp": 31625,
+          "expected_profit_gp": 14688,
+          "filled_qty": 38,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 38,
+          "actual_profit_gp": 5282,
+          "forced_exit_price": 399,
+          "capital_hours": 203412,
+          "fill_rate": 0.304,
+          "expected_return_per_posted_capital_hour": 0.03870356
+        },
+        {
+          "id": 31910,
+          "name": "Mithril cannonball",
+          "strategy": "patient",
+          "posted_capital_gp": 1551000,
+          "expected_profit_gp": 9039,
+          "filled_qty": 404,
+          "target_sold_qty": 404,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 5252,
+          "forced_exit_price": null,
+          "capital_hours": 6659712.0,
+          "fill_rate": 0.0367,
+          "expected_return_per_posted_capital_hour": 0.00048565
+        },
+        {
+          "id": 855,
+          "name": "Yew longbow",
+          "strategy": "patient",
+          "posted_capital_gp": 6117202,
+          "expected_profit_gp": 20512,
+          "filled_qty": 0,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 0,
+          "capital_hours": 24468808,
+          "fill_rate": 0.0,
+          "expected_return_per_posted_capital_hour": 0.00027943
+        }
+      ],
+      "planned_capital_gp": 29999683,
+      "expected_profit_gp": 136897,
+      "actual_profit_gp": -5681,
+      "capital_hours": 123659356.0,
+      "utility_gp": -67511,
+      "violations": [
+        {
+          "rule": "capital_efficiency",
+          "item": 575,
+          "actual": 0.00043429,
+          "minimum": 0.0005
+        },
+        {
+          "rule": "capital_efficiency",
+          "item": 26997,
+          "actual": 0.00025261,
+          "minimum": 0.0005
+        },
+        {
+          "rule": "capital_efficiency",
+          "item": 31910,
+          "actual": 0.00048565,
+          "minimum": 0.0005
+        },
+        {
+          "rule": "capital_efficiency",
+          "item": 855,
+          "actual": 0.00027943,
+          "minimum": 0.0005
+        }
+      ]
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "source": "real_market_2026-07-26.json.gz",
+      "seed": 20260726,
+      "regime": "observed",
+      "attendance": "away_2h",
+      "away_hours": 2,
+      "slot_cap": 8,
+      "cash_gp": 70000000,
+      "selected_item_ids": [
+        575,
+        26997,
+        6328,
+        855,
+        30619,
+        10828,
+        2497
+      ],
+      "selected_items": [
+        "Earth orb",
+        "Ensouled hellhound head",
+        "Snakeskin boots",
+        "Yew longbow",
+        "Bounty supply crate (anglerfish)",
+        "Helm of neitiznot",
+        "Black d'hide chaps"
+      ],
+      "orders": [
+        {
+          "id": 575,
+          "name": "Earth orb",
+          "strategy": "patient",
+          "posted_capital_gp": 11494656,
+          "expected_profit_gp": 59904,
+          "filled_qty": 0,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 0,
+          "capital_hours": 45978624,
+          "fill_rate": 0.0,
+          "expected_return_per_posted_capital_hour": 0.00043429
+        },
+        {
+          "id": 26997,
+          "name": "Ensouled hellhound head",
+          "strategy": "patient",
+          "posted_capital_gp": 10805200,
+          "expected_profit_gp": 32754,
+          "filled_qty": 115,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 115,
+          "actual_profit_gp": -16215,
+          "forced_exit_price": 3325,
+          "capital_hours": 46348800,
+          "fill_rate": 0.0362,
+          "expected_return_per_posted_capital_hour": 0.00025261
+        },
+        {
+          "id": 6328,
+          "name": "Snakeskin boots",
+          "strategy": "patient",
+          "posted_capital_gp": 31625,
+          "expected_profit_gp": 14688,
+          "filled_qty": 38,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 38,
+          "actual_profit_gp": 5282,
+          "forced_exit_price": 399,
+          "capital_hours": 203412,
+          "fill_rate": 0.304,
+          "expected_return_per_posted_capital_hour": 0.03870356
+        },
+        {
+          "id": 855,
+          "name": "Yew longbow",
+          "strategy": "patient",
+          "posted_capital_gp": 8892000,
+          "expected_profit_gp": 20512,
+          "filled_qty": 0,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 0,
+          "capital_hours": 35568000,
+          "fill_rate": 0.0,
+          "expected_return_per_posted_capital_hour": 0.00019223
+        },
+        {
+          "id": 30619,
+          "name": "Bounty supply crate (anglerfish)",
+          "strategy": "patient",
+          "posted_capital_gp": 330300,
+          "expected_profit_gp": 17400,
+          "filled_qty": 0,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 0,
+          "capital_hours": 1321200,
+          "fill_rate": 0.0,
+          "expected_return_per_posted_capital_hour": 0.00438995
+        },
+        {
+          "id": 10828,
+          "name": "Helm of neitiznot",
+          "strategy": "patient-probe",
+          "posted_capital_gp": 3319680,
+          "expected_profit_gp": 84420,
+          "filled_qty": 0,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 0,
+          "capital_hours": 13278720,
+          "fill_rate": 0.0,
+          "expected_return_per_posted_capital_hour": 0.00211918
+        },
+        {
+          "id": 2497,
+          "name": "Black d'hide chaps",
+          "strategy": "patient-probe",
+          "posted_capital_gp": 177612,
+          "expected_profit_gp": 14421,
+          "filled_qty": 14,
+          "target_sold_qty": 14,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 3906,
+          "forced_exit_price": null,
+          "capital_hours": 1059440.0,
+          "fill_rate": 0.2456,
+          "expected_return_per_posted_capital_hour": 0.00676615
+        }
+      ],
+      "planned_capital_gp": 35051073,
+      "expected_profit_gp": 244099,
+      "actual_profit_gp": -7027,
+      "capital_hours": 143758196.0,
+      "utility_gp": -78906,
+      "violations": [
+        {
+          "rule": "capital_efficiency",
+          "item": 575,
+          "actual": 0.00043429,
+          "minimum": 0.0005
+        },
+        {
+          "rule": "capital_efficiency",
+          "item": 26997,
+          "actual": 0.00025261,
+          "minimum": 0.0005
+        },
+        {
+          "rule": "capital_efficiency",
+          "item": 855,
+          "actual": 0.00019223,
+          "minimum": 0.0005
+        }
+      ]
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "source": "real_market_2026-07-26.json.gz",
+      "seed": 20260726,
+      "regime": "observed",
+      "attendance": "away_2h",
+      "away_hours": 2,
+      "slot_cap": 8,
+      "cash_gp": 100000000,
+      "selected_item_ids": [
+        575,
+        26997,
+        855,
+        10828,
+        24585,
+        29110
+      ],
+      "selected_items": [
+        "Earth orb",
+        "Ensouled hellhound head",
+        "Yew longbow",
+        "Helm of neitiznot",
+        "Looting bag note",
+        "Raw pyre fox"
+      ],
+      "orders": [
+        {
+          "id": 575,
+          "name": "Earth orb",
+          "strategy": "patient",
+          "posted_capital_gp": 11494656,
+          "expected_profit_gp": 59904,
+          "filled_qty": 0,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 0,
+          "capital_hours": 45978624,
+          "fill_rate": 0.0,
+          "expected_return_per_posted_capital_hour": 0.00043429
+        },
+        {
+          "id": 26997,
+          "name": "Ensouled hellhound head",
+          "strategy": "patient",
+          "posted_capital_gp": 10805200,
+          "expected_profit_gp": 32754,
+          "filled_qty": 115,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 115,
+          "actual_profit_gp": -16215,
+          "forced_exit_price": 3325,
+          "capital_hours": 46348800,
+          "fill_rate": 0.0362,
+          "expected_return_per_posted_capital_hour": 0.00025261
+        },
+        {
+          "id": 855,
+          "name": "Yew longbow",
+          "strategy": "patient",
+          "posted_capital_gp": 8892000,
+          "expected_profit_gp": 20512,
+          "filled_qty": 0,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 0,
+          "capital_hours": 35568000,
+          "fill_rate": 0.0,
+          "expected_return_per_posted_capital_hour": 0.00019223
+        },
+        {
+          "id": 10828,
+          "name": "Helm of neitiznot",
+          "strategy": "patient-probe",
+          "posted_capital_gp": 3319680,
+          "expected_profit_gp": 84420,
+          "filled_qty": 0,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 0,
+          "capital_hours": 13278720,
+          "fill_rate": 0.0,
+          "expected_return_per_posted_capital_hour": 0.00211918
+        },
+        {
+          "id": 24585,
+          "name": "Looting bag note",
+          "strategy": "patient-probe",
+          "posted_capital_gp": 810252,
+          "expected_profit_gp": 32058,
+          "filled_qty": 0,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 0,
+          "capital_hours": 3241008,
+          "fill_rate": 0.0,
+          "expected_return_per_posted_capital_hour": 0.00329712
+        },
+        {
+          "id": 29110,
+          "name": "Raw pyre fox",
+          "strategy": "patient-probe",
+          "posted_capital_gp": 869200,
+          "expected_profit_gp": 36736,
+          "filled_qty": 0,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 0,
+          "capital_hours": 3476800,
+          "fill_rate": 0.0,
+          "expected_return_per_posted_capital_hour": 0.00352201
+        }
+      ],
+      "planned_capital_gp": 36190988,
+      "expected_profit_gp": 266384,
+      "actual_profit_gp": -16215,
+      "capital_hours": 147891952,
+      "utility_gp": -90161,
+      "violations": [
+        {
+          "rule": "capital_efficiency",
+          "item": 575,
+          "actual": 0.00043429,
+          "minimum": 0.0005
+        },
+        {
+          "rule": "capital_efficiency",
+          "item": 26997,
+          "actual": 0.00025261,
+          "minimum": 0.0005
+        },
+        {
+          "rule": "capital_efficiency",
+          "item": 855,
+          "actual": 0.00019223,
+          "minimum": 0.0005
+        }
+      ]
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "source": "real_market_2026-07-26.json.gz",
+      "seed": 20260726,
+      "regime": "observed",
+      "attendance": "away_2h",
+      "away_hours": 2,
+      "slot_cap": 8,
+      "cash_gp": 250000000,
+      "selected_item_ids": [
+        575,
+        10828,
+        4675
+      ],
+      "selected_items": [
+        "Earth orb",
+        "Helm of neitiznot",
+        "Ancient staff"
+      ],
+      "orders": [
+        {
+          "id": 575,
+          "name": "Earth orb",
+          "strategy": "patient",
+          "posted_capital_gp": 11494656,
+          "expected_profit_gp": 59904,
+          "filled_qty": 0,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 0,
+          "capital_hours": 45978624,
+          "fill_rate": 0.0,
+          "expected_return_per_posted_capital_hour": 0.00043429
+        },
+        {
+          "id": 10828,
+          "name": "Helm of neitiznot",
+          "strategy": "patient-probe",
+          "posted_capital_gp": 3319680,
+          "expected_profit_gp": 84420,
+          "filled_qty": 0,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 0,
+          "capital_hours": 13278720,
+          "fill_rate": 0.0,
+          "expected_return_per_posted_capital_hour": 0.00211918
+        },
+        {
+          "id": 4675,
+          "name": "Ancient staff",
+          "strategy": "patient-probe",
+          "posted_capital_gp": 2257162,
+          "expected_profit_gp": 61940,
+          "filled_qty": 0,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 0,
+          "capital_hours": 9028648,
+          "fill_rate": 0.0,
+          "expected_return_per_posted_capital_hour": 0.00228679
+        }
+      ],
+      "planned_capital_gp": 17071498,
+      "expected_profit_gp": 206264,
+      "actual_profit_gp": 0,
+      "capital_hours": 68285992,
+      "utility_gp": -34143,
+      "violations": [
+        {
+          "rule": "capital_efficiency",
+          "item": 575,
+          "actual": 0.00043429,
+          "minimum": 0.0005
+        }
+      ]
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "source": "real_market_2026-07-26.json.gz",
+      "seed": 20260726,
+      "regime": "observed",
+      "attendance": "away_2h",
+      "away_hours": 2,
+      "slot_cap": 8,
+      "cash_gp": 1000000000,
+      "selected_item_ids": [],
+      "selected_items": [],
+      "orders": [],
+      "planned_capital_gp": 0,
+      "expected_profit_gp": 0,
+      "actual_profit_gp": 0,
+      "capital_hours": 0,
+      "utility_gp": 0,
+      "violations": []
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "source": "real_market_2026-07-26.json.gz",
+      "seed": 20260726,
+      "regime": "observed",
+      "attendance": "overnight",
+      "away_hours": 12,
+      "slot_cap": 1,
+      "cash_gp": 10000000,
+      "selected_item_ids": [
+        575
+      ],
+      "selected_items": [
+        "Earth orb"
+      ],
+      "orders": [
+        {
+          "id": 575,
+          "name": "Earth orb",
+          "strategy": "patient",
+          "posted_capital_gp": 9999619,
+          "expected_profit_gp": 156338,
+          "filled_qty": 0,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 0,
+          "capital_hours": 39998476,
+          "fill_rate": 0.0,
+          "expected_return_per_posted_capital_hour": 0.00130287
+        }
+      ],
+      "planned_capital_gp": 9999619,
+      "expected_profit_gp": 156338,
+      "actual_profit_gp": 0,
+      "capital_hours": 39998476,
+      "utility_gp": -19999,
+      "violations": []
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "source": "real_market_2026-07-26.json.gz",
+      "seed": 20260726,
+      "regime": "observed",
+      "attendance": "overnight",
+      "away_hours": 12,
+      "slot_cap": 1,
+      "cash_gp": 30000000,
+      "selected_item_ids": [
+        575
+      ],
+      "selected_items": [
+        "Earth orb"
+      ],
+      "orders": [
+        {
+          "id": 575,
+          "name": "Earth orb",
+          "strategy": "patient",
+          "posted_capital_gp": 11494656,
+          "expected_profit_gp": 179712,
+          "filled_qty": 0,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 0,
+          "capital_hours": 45978624,
+          "fill_rate": 0.0,
+          "expected_return_per_posted_capital_hour": 0.00130287
+        }
+      ],
+      "planned_capital_gp": 11494656,
+      "expected_profit_gp": 179712,
+      "actual_profit_gp": 0,
+      "capital_hours": 45978624,
+      "utility_gp": -22989,
+      "violations": []
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "source": "real_market_2026-07-26.json.gz",
+      "seed": 20260726,
+      "regime": "observed",
+      "attendance": "overnight",
+      "away_hours": 12,
+      "slot_cap": 1,
+      "cash_gp": 70000000,
+      "selected_item_ids": [
+        575
+      ],
+      "selected_items": [
+        "Earth orb"
+      ],
+      "orders": [
+        {
+          "id": 575,
+          "name": "Earth orb",
+          "strategy": "patient",
+          "posted_capital_gp": 11494656,
+          "expected_profit_gp": 179712,
+          "filled_qty": 0,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 0,
+          "capital_hours": 45978624,
+          "fill_rate": 0.0,
+          "expected_return_per_posted_capital_hour": 0.00130287
+        }
+      ],
+      "planned_capital_gp": 11494656,
+      "expected_profit_gp": 179712,
+      "actual_profit_gp": 0,
+      "capital_hours": 45978624,
+      "utility_gp": -22989,
+      "violations": []
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "source": "real_market_2026-07-26.json.gz",
+      "seed": 20260726,
+      "regime": "observed",
+      "attendance": "overnight",
+      "away_hours": 12,
+      "slot_cap": 1,
+      "cash_gp": 100000000,
+      "selected_item_ids": [
+        575
+      ],
+      "selected_items": [
+        "Earth orb"
+      ],
+      "orders": [
+        {
+          "id": 575,
+          "name": "Earth orb",
+          "strategy": "patient",
+          "posted_capital_gp": 11494656,
+          "expected_profit_gp": 179712,
+          "filled_qty": 0,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 0,
+          "capital_hours": 45978624,
+          "fill_rate": 0.0,
+          "expected_return_per_posted_capital_hour": 0.00130287
+        }
+      ],
+      "planned_capital_gp": 11494656,
+      "expected_profit_gp": 179712,
+      "actual_profit_gp": 0,
+      "capital_hours": 45978624,
+      "utility_gp": -22989,
+      "violations": []
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "source": "real_market_2026-07-26.json.gz",
+      "seed": 20260726,
+      "regime": "observed",
+      "attendance": "overnight",
+      "away_hours": 12,
+      "slot_cap": 1,
+      "cash_gp": 250000000,
+      "selected_item_ids": [
+        575
+      ],
+      "selected_items": [
+        "Earth orb"
+      ],
+      "orders": [
+        {
+          "id": 575,
+          "name": "Earth orb",
+          "strategy": "patient",
+          "posted_capital_gp": 11494656,
+          "expected_profit_gp": 179712,
+          "filled_qty": 0,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 0,
+          "capital_hours": 45978624,
+          "fill_rate": 0.0,
+          "expected_return_per_posted_capital_hour": 0.00130287
+        }
+      ],
+      "planned_capital_gp": 11494656,
+      "expected_profit_gp": 179712,
+      "actual_profit_gp": 0,
+      "capital_hours": 45978624,
+      "utility_gp": -22989,
+      "violations": []
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "source": "real_market_2026-07-26.json.gz",
+      "seed": 20260726,
+      "regime": "observed",
+      "attendance": "overnight",
+      "away_hours": 12,
+      "slot_cap": 1,
+      "cash_gp": 1000000000,
+      "selected_item_ids": [],
+      "selected_items": [],
+      "orders": [],
+      "planned_capital_gp": 0,
+      "expected_profit_gp": 0,
+      "actual_profit_gp": 0,
+      "capital_hours": 0,
+      "utility_gp": 0,
+      "violations": []
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "source": "real_market_2026-07-26.json.gz",
+      "seed": 20260726,
+      "regime": "observed",
+      "attendance": "overnight",
+      "away_hours": 12,
+      "slot_cap": 4,
+      "cash_gp": 10000000,
+      "selected_item_ids": [
+        575
+      ],
+      "selected_items": [
+        "Earth orb"
+      ],
+      "orders": [
+        {
+          "id": 575,
+          "name": "Earth orb",
+          "strategy": "patient",
+          "posted_capital_gp": 9999619,
+          "expected_profit_gp": 156338,
+          "filled_qty": 0,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 0,
+          "capital_hours": 39998476,
+          "fill_rate": 0.0,
+          "expected_return_per_posted_capital_hour": 0.00130287
+        }
+      ],
+      "planned_capital_gp": 9999619,
+      "expected_profit_gp": 156338,
+      "actual_profit_gp": 0,
+      "capital_hours": 39998476,
+      "utility_gp": -19999,
+      "violations": []
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "source": "real_market_2026-07-26.json.gz",
+      "seed": 20260726,
+      "regime": "observed",
+      "attendance": "overnight",
+      "away_hours": 12,
+      "slot_cap": 4,
+      "cash_gp": 30000000,
+      "selected_item_ids": [
+        575,
+        19629,
+        26997,
+        22597
+      ],
+      "selected_items": [
+        "Earth orb",
+        "Barrows teleport (tablet)",
+        "Ensouled hellhound head",
+        "Urt salt"
+      ],
+      "orders": [
+        {
+          "id": 575,
+          "name": "Earth orb",
+          "strategy": "patient",
+          "posted_capital_gp": 11494656,
+          "expected_profit_gp": 179712,
+          "filled_qty": 0,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 0,
+          "capital_hours": 45978624,
+          "fill_rate": 0.0,
+          "expected_return_per_posted_capital_hour": 0.00130287
+        },
+        {
+          "id": 19629,
+          "name": "Barrows teleport (tablet)",
+          "strategy": "patient",
+          "posted_capital_gp": 4848365,
+          "expected_profit_gp": 15494,
+          "filled_qty": 0,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 0,
+          "capital_hours": 19393460,
+          "fill_rate": 0.0,
+          "expected_return_per_posted_capital_hour": 0.00026631
+        },
+        {
+          "id": 26997,
+          "name": "Ensouled hellhound head",
+          "strategy": "patient",
+          "posted_capital_gp": 10805200,
+          "expected_profit_gp": 98421,
+          "filled_qty": 115,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 115,
+          "actual_profit_gp": -16215,
+          "forced_exit_price": 3325,
+          "capital_hours": 46348800,
+          "fill_rate": 0.0362,
+          "expected_return_per_posted_capital_hour": 0.00075906
+        },
+        {
+          "id": 22597,
+          "name": "Urt salt",
+          "strategy": "patient",
+          "posted_capital_gp": 970000,
+          "expected_profit_gp": 16080,
+          "filled_qty": 473,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 473,
+          "actual_profit_gp": 473,
+          "forced_exit_price": 100,
+          "capital_hours": 4247048,
+          "fill_rate": 0.0473,
+          "expected_return_per_posted_capital_hour": 0.00138144
+        }
+      ],
+      "planned_capital_gp": 28118221,
+      "expected_profit_gp": 309707,
+      "actual_profit_gp": -15742,
+      "capital_hours": 115967932,
+      "utility_gp": -73726,
+      "violations": [
+        {
+          "rule": "capital_efficiency",
+          "item": 19629,
+          "actual": 0.00026631,
+          "minimum": 0.0005
+        }
+      ]
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "source": "real_market_2026-07-26.json.gz",
+      "seed": 20260726,
+      "regime": "observed",
+      "attendance": "overnight",
+      "away_hours": 12,
+      "slot_cap": 4,
+      "cash_gp": 70000000,
+      "selected_item_ids": [
+        575,
+        19629,
+        26997,
+        22597
+      ],
+      "selected_items": [
+        "Earth orb",
+        "Barrows teleport (tablet)",
+        "Ensouled hellhound head",
+        "Urt salt"
+      ],
+      "orders": [
+        {
+          "id": 575,
+          "name": "Earth orb",
+          "strategy": "patient",
+          "posted_capital_gp": 11494656,
+          "expected_profit_gp": 179712,
+          "filled_qty": 0,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 0,
+          "capital_hours": 45978624,
+          "fill_rate": 0.0,
+          "expected_return_per_posted_capital_hour": 0.00130287
+        },
+        {
+          "id": 19629,
+          "name": "Barrows teleport (tablet)",
+          "strategy": "patient",
+          "posted_capital_gp": 4848365,
+          "expected_profit_gp": 15494,
+          "filled_qty": 0,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 0,
+          "capital_hours": 19393460,
+          "fill_rate": 0.0,
+          "expected_return_per_posted_capital_hour": 0.00026631
+        },
+        {
+          "id": 26997,
+          "name": "Ensouled hellhound head",
+          "strategy": "patient",
+          "posted_capital_gp": 10805200,
+          "expected_profit_gp": 98421,
+          "filled_qty": 115,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 115,
+          "actual_profit_gp": -16215,
+          "forced_exit_price": 3325,
+          "capital_hours": 46348800,
+          "fill_rate": 0.0362,
+          "expected_return_per_posted_capital_hour": 0.00075906
+        },
+        {
+          "id": 22597,
+          "name": "Urt salt",
+          "strategy": "patient",
+          "posted_capital_gp": 970000,
+          "expected_profit_gp": 16080,
+          "filled_qty": 473,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 473,
+          "actual_profit_gp": 473,
+          "forced_exit_price": 100,
+          "capital_hours": 4247048,
+          "fill_rate": 0.0473,
+          "expected_return_per_posted_capital_hour": 0.00138144
+        }
+      ],
+      "planned_capital_gp": 28118221,
+      "expected_profit_gp": 309707,
+      "actual_profit_gp": -15742,
+      "capital_hours": 115967932,
+      "utility_gp": -73726,
+      "violations": [
+        {
+          "rule": "capital_efficiency",
+          "item": 19629,
+          "actual": 0.00026631,
+          "minimum": 0.0005
+        }
+      ]
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "source": "real_market_2026-07-26.json.gz",
+      "seed": 20260726,
+      "regime": "observed",
+      "attendance": "overnight",
+      "away_hours": 12,
+      "slot_cap": 4,
+      "cash_gp": 100000000,
+      "selected_item_ids": [
+        575,
+        26997,
+        31910,
+        855
+      ],
+      "selected_items": [
+        "Earth orb",
+        "Ensouled hellhound head",
+        "Mithril cannonball",
+        "Yew longbow"
+      ],
+      "orders": [
+        {
+          "id": 575,
+          "name": "Earth orb",
+          "strategy": "patient",
+          "posted_capital_gp": 11494656,
+          "expected_profit_gp": 179712,
+          "filled_qty": 0,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 0,
+          "capital_hours": 45978624,
+          "fill_rate": 0.0,
+          "expected_return_per_posted_capital_hour": 0.00130287
+        },
+        {
+          "id": 26997,
+          "name": "Ensouled hellhound head",
+          "strategy": "patient",
+          "posted_capital_gp": 10805200,
+          "expected_profit_gp": 98421,
+          "filled_qty": 115,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 115,
+          "actual_profit_gp": -16215,
+          "forced_exit_price": 3325,
+          "capital_hours": 46348800,
+          "fill_rate": 0.0362,
+          "expected_return_per_posted_capital_hour": 0.00075906
+        },
+        {
+          "id": 31910,
+          "name": "Mithril cannonball",
+          "strategy": "patient",
+          "posted_capital_gp": 1551000,
+          "expected_profit_gp": 27114,
+          "filled_qty": 404,
+          "target_sold_qty": 404,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 5252,
+          "forced_exit_price": null,
+          "capital_hours": 6659712.0,
+          "fill_rate": 0.0367,
+          "expected_return_per_posted_capital_hour": 0.0014568
+        },
+        {
+          "id": 855,
+          "name": "Yew longbow",
+          "strategy": "patient",
+          "posted_capital_gp": 8892000,
+          "expected_profit_gp": 61540,
+          "filled_qty": 0,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 0,
+          "capital_hours": 35568000,
+          "fill_rate": 0.0,
+          "expected_return_per_posted_capital_hour": 0.00057674
+        }
+      ],
+      "planned_capital_gp": 32742856,
+      "expected_profit_gp": 366787,
+      "actual_profit_gp": -10963,
+      "capital_hours": 134555136.0,
+      "utility_gp": -78241,
+      "violations": []
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "source": "real_market_2026-07-26.json.gz",
+      "seed": 20260726,
+      "regime": "observed",
+      "attendance": "overnight",
+      "away_hours": 12,
+      "slot_cap": 4,
+      "cash_gp": 250000000,
+      "selected_item_ids": [
+        575,
+        26997,
+        855,
+        29110
+      ],
+      "selected_items": [
+        "Earth orb",
+        "Ensouled hellhound head",
+        "Yew longbow",
+        "Raw pyre fox"
+      ],
+      "orders": [
+        {
+          "id": 575,
+          "name": "Earth orb",
+          "strategy": "patient",
+          "posted_capital_gp": 11494656,
+          "expected_profit_gp": 179712,
+          "filled_qty": 0,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 0,
+          "capital_hours": 45978624,
+          "fill_rate": 0.0,
+          "expected_return_per_posted_capital_hour": 0.00130287
+        },
+        {
+          "id": 26997,
+          "name": "Ensouled hellhound head",
+          "strategy": "patient",
+          "posted_capital_gp": 10805200,
+          "expected_profit_gp": 98421,
+          "filled_qty": 115,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 115,
+          "actual_profit_gp": -16215,
+          "forced_exit_price": 3325,
+          "capital_hours": 46348800,
+          "fill_rate": 0.0362,
+          "expected_return_per_posted_capital_hour": 0.00075906
+        },
+        {
+          "id": 855,
+          "name": "Yew longbow",
+          "strategy": "patient",
+          "posted_capital_gp": 8892000,
+          "expected_profit_gp": 61540,
+          "filled_qty": 0,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 0,
+          "capital_hours": 35568000,
+          "fill_rate": 0.0,
+          "expected_return_per_posted_capital_hour": 0.00057674
+        },
+        {
+          "id": 29110,
+          "name": "Raw pyre fox",
+          "strategy": "patient-probe",
+          "posted_capital_gp": 2660600,
+          "expected_profit_gp": 112448,
+          "filled_qty": 0,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 0,
+          "capital_hours": 10642400,
+          "fill_rate": 0.0,
+          "expected_return_per_posted_capital_hour": 0.00352201
+        }
+      ],
+      "planned_capital_gp": 33852456,
+      "expected_profit_gp": 452121,
+      "actual_profit_gp": -16215,
+      "capital_hours": 138537824,
+      "utility_gp": -85484,
+      "violations": []
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "source": "real_market_2026-07-26.json.gz",
+      "seed": 20260726,
+      "regime": "observed",
+      "attendance": "overnight",
+      "away_hours": 12,
+      "slot_cap": 4,
+      "cash_gp": 1000000000,
+      "selected_item_ids": [],
+      "selected_items": [],
+      "orders": [],
+      "planned_capital_gp": 0,
+      "expected_profit_gp": 0,
+      "actual_profit_gp": 0,
+      "capital_hours": 0,
+      "utility_gp": 0,
+      "violations": []
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "source": "real_market_2026-07-26.json.gz",
+      "seed": 20260726,
+      "regime": "observed",
+      "attendance": "overnight",
+      "away_hours": 12,
+      "slot_cap": 8,
+      "cash_gp": 10000000,
+      "selected_item_ids": [
+        575
+      ],
+      "selected_items": [
+        "Earth orb"
+      ],
+      "orders": [
+        {
+          "id": 575,
+          "name": "Earth orb",
+          "strategy": "patient",
+          "posted_capital_gp": 9999619,
+          "expected_profit_gp": 156338,
+          "filled_qty": 0,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 0,
+          "capital_hours": 39998476,
+          "fill_rate": 0.0,
+          "expected_return_per_posted_capital_hour": 0.00130287
+        }
+      ],
+      "planned_capital_gp": 9999619,
+      "expected_profit_gp": 156338,
+      "actual_profit_gp": 0,
+      "capital_hours": 39998476,
+      "utility_gp": -19999,
+      "violations": []
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "source": "real_market_2026-07-26.json.gz",
+      "seed": 20260726,
+      "regime": "observed",
+      "attendance": "overnight",
+      "away_hours": 12,
+      "slot_cap": 8,
+      "cash_gp": 30000000,
+      "selected_item_ids": [
+        575,
+        19629,
+        26997,
+        22597,
+        31910,
+        6328,
+        30619
+      ],
+      "selected_items": [
+        "Earth orb",
+        "Barrows teleport (tablet)",
+        "Ensouled hellhound head",
+        "Urt salt",
+        "Mithril cannonball",
+        "Snakeskin boots",
+        "Bounty supply crate (anglerfish)"
+      ],
+      "orders": [
+        {
+          "id": 575,
+          "name": "Earth orb",
+          "strategy": "patient",
+          "posted_capital_gp": 11494656,
+          "expected_profit_gp": 179712,
+          "filled_qty": 0,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 0,
+          "capital_hours": 45978624,
+          "fill_rate": 0.0,
+          "expected_return_per_posted_capital_hour": 0.00130287
+        },
+        {
+          "id": 19629,
+          "name": "Barrows teleport (tablet)",
+          "strategy": "patient",
+          "posted_capital_gp": 4848365,
+          "expected_profit_gp": 15494,
+          "filled_qty": 0,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 0,
+          "capital_hours": 19393460,
+          "fill_rate": 0.0,
+          "expected_return_per_posted_capital_hour": 0.00026631
+        },
+        {
+          "id": 26997,
+          "name": "Ensouled hellhound head",
+          "strategy": "patient",
+          "posted_capital_gp": 10805200,
+          "expected_profit_gp": 98421,
+          "filled_qty": 115,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 115,
+          "actual_profit_gp": -16215,
+          "forced_exit_price": 3325,
+          "capital_hours": 46348800,
+          "fill_rate": 0.0362,
+          "expected_return_per_posted_capital_hour": 0.00075906
+        },
+        {
+          "id": 22597,
+          "name": "Urt salt",
+          "strategy": "patient",
+          "posted_capital_gp": 970000,
+          "expected_profit_gp": 16080,
+          "filled_qty": 473,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 473,
+          "actual_profit_gp": 473,
+          "forced_exit_price": 100,
+          "capital_hours": 4247048,
+          "fill_rate": 0.0473,
+          "expected_return_per_posted_capital_hour": 0.00138144
+        },
+        {
+          "id": 31910,
+          "name": "Mithril cannonball",
+          "strategy": "patient",
+          "posted_capital_gp": 1551000,
+          "expected_profit_gp": 27114,
+          "filled_qty": 404,
+          "target_sold_qty": 404,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 5252,
+          "forced_exit_price": null,
+          "capital_hours": 6659712.0,
+          "fill_rate": 0.0367,
+          "expected_return_per_posted_capital_hour": 0.0014568
+        },
+        {
+          "id": 6328,
+          "name": "Snakeskin boots",
+          "strategy": "patient",
+          "posted_capital_gp": 31625,
+          "expected_profit_gp": 18000,
+          "filled_qty": 38,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 38,
+          "actual_profit_gp": 5282,
+          "forced_exit_price": 399,
+          "capital_hours": 203412,
+          "fill_rate": 0.304,
+          "expected_return_per_posted_capital_hour": 0.04743083
+        },
+        {
+          "id": 30619,
+          "name": "Bounty supply crate (anglerfish)",
+          "strategy": "patient",
+          "posted_capital_gp": 297270,
+          "expected_profit_gp": 39150,
+          "filled_qty": 0,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 0,
+          "capital_hours": 1189080,
+          "fill_rate": 0.0,
+          "expected_return_per_posted_capital_hour": 0.01097487
+        }
+      ],
+      "planned_capital_gp": 29998116,
+      "expected_profit_gp": 393971,
+      "actual_profit_gp": -5208,
+      "capital_hours": 124020136.0,
+      "utility_gp": -67218,
+      "violations": [
+        {
+          "rule": "capital_efficiency",
+          "item": 19629,
+          "actual": 0.00026631,
+          "minimum": 0.0005
+        }
+      ]
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "source": "real_market_2026-07-26.json.gz",
+      "seed": 20260726,
+      "regime": "observed",
+      "attendance": "overnight",
+      "away_hours": 12,
+      "slot_cap": 8,
+      "cash_gp": 70000000,
+      "selected_item_ids": [
+        575,
+        19629,
+        26997,
+        22597,
+        31910,
+        855,
+        6328,
+        30619
+      ],
+      "selected_items": [
+        "Earth orb",
+        "Barrows teleport (tablet)",
+        "Ensouled hellhound head",
+        "Urt salt",
+        "Mithril cannonball",
+        "Yew longbow",
+        "Snakeskin boots",
+        "Bounty supply crate (anglerfish)"
+      ],
+      "orders": [
+        {
+          "id": 575,
+          "name": "Earth orb",
+          "strategy": "patient",
+          "posted_capital_gp": 11494656,
+          "expected_profit_gp": 179712,
+          "filled_qty": 0,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 0,
+          "capital_hours": 45978624,
+          "fill_rate": 0.0,
+          "expected_return_per_posted_capital_hour": 0.00130287
+        },
+        {
+          "id": 19629,
+          "name": "Barrows teleport (tablet)",
+          "strategy": "patient",
+          "posted_capital_gp": 4848365,
+          "expected_profit_gp": 15494,
+          "filled_qty": 0,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 0,
+          "capital_hours": 19393460,
+          "fill_rate": 0.0,
+          "expected_return_per_posted_capital_hour": 0.00026631
+        },
+        {
+          "id": 26997,
+          "name": "Ensouled hellhound head",
+          "strategy": "patient",
+          "posted_capital_gp": 10805200,
+          "expected_profit_gp": 98421,
+          "filled_qty": 115,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 115,
+          "actual_profit_gp": -16215,
+          "forced_exit_price": 3325,
+          "capital_hours": 46348800,
+          "fill_rate": 0.0362,
+          "expected_return_per_posted_capital_hour": 0.00075906
+        },
+        {
+          "id": 22597,
+          "name": "Urt salt",
+          "strategy": "patient",
+          "posted_capital_gp": 970000,
+          "expected_profit_gp": 16080,
+          "filled_qty": 473,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 473,
+          "actual_profit_gp": 473,
+          "forced_exit_price": 100,
+          "capital_hours": 4247048,
+          "fill_rate": 0.0473,
+          "expected_return_per_posted_capital_hour": 0.00138144
+        },
+        {
+          "id": 31910,
+          "name": "Mithril cannonball",
+          "strategy": "patient",
+          "posted_capital_gp": 1551000,
+          "expected_profit_gp": 27114,
+          "filled_qty": 404,
+          "target_sold_qty": 404,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 5252,
+          "forced_exit_price": null,
+          "capital_hours": 6659712.0,
+          "fill_rate": 0.0367,
+          "expected_return_per_posted_capital_hour": 0.0014568
+        },
+        {
+          "id": 855,
+          "name": "Yew longbow",
+          "strategy": "patient",
+          "posted_capital_gp": 8892000,
+          "expected_profit_gp": 61540,
+          "filled_qty": 0,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 0,
+          "capital_hours": 35568000,
+          "fill_rate": 0.0,
+          "expected_return_per_posted_capital_hour": 0.00057674
+        },
+        {
+          "id": 6328,
+          "name": "Snakeskin boots",
+          "strategy": "patient",
+          "posted_capital_gp": 31625,
+          "expected_profit_gp": 18000,
+          "filled_qty": 38,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 38,
+          "actual_profit_gp": 5282,
+          "forced_exit_price": 399,
+          "capital_hours": 203412,
+          "fill_rate": 0.304,
+          "expected_return_per_posted_capital_hour": 0.04743083
+        },
+        {
+          "id": 30619,
+          "name": "Bounty supply crate (anglerfish)",
+          "strategy": "patient",
+          "posted_capital_gp": 330300,
+          "expected_profit_gp": 43500,
+          "filled_qty": 0,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 0,
+          "capital_hours": 1321200,
+          "fill_rate": 0.0,
+          "expected_return_per_posted_capital_hour": 0.01097487
+        }
+      ],
+      "planned_capital_gp": 38923146,
+      "expected_profit_gp": 459861,
+      "actual_profit_gp": -5208,
+      "capital_hours": 159720256.0,
+      "utility_gp": -85068,
+      "violations": [
+        {
+          "rule": "capital_efficiency",
+          "item": 19629,
+          "actual": 0.00026631,
+          "minimum": 0.0005
+        }
+      ]
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "source": "real_market_2026-07-26.json.gz",
+      "seed": 20260726,
+      "regime": "observed",
+      "attendance": "overnight",
+      "away_hours": 12,
+      "slot_cap": 8,
+      "cash_gp": 100000000,
+      "selected_item_ids": [
+        575,
+        26997,
+        31910,
+        855,
+        30619,
+        4089,
+        5416,
+        29110
+      ],
+      "selected_items": [
+        "Earth orb",
+        "Ensouled hellhound head",
+        "Mithril cannonball",
+        "Yew longbow",
+        "Bounty supply crate (anglerfish)",
+        "Mystic hat",
+        "Bananas(5)",
+        "Raw pyre fox"
+      ],
+      "orders": [
+        {
+          "id": 575,
+          "name": "Earth orb",
+          "strategy": "patient",
+          "posted_capital_gp": 11494656,
+          "expected_profit_gp": 179712,
+          "filled_qty": 0,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 0,
+          "capital_hours": 45978624,
+          "fill_rate": 0.0,
+          "expected_return_per_posted_capital_hour": 0.00130287
+        },
+        {
+          "id": 26997,
+          "name": "Ensouled hellhound head",
+          "strategy": "patient",
+          "posted_capital_gp": 10805200,
+          "expected_profit_gp": 98421,
+          "filled_qty": 115,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 115,
+          "actual_profit_gp": -16215,
+          "forced_exit_price": 3325,
+          "capital_hours": 46348800,
+          "fill_rate": 0.0362,
+          "expected_return_per_posted_capital_hour": 0.00075906
+        },
+        {
+          "id": 31910,
+          "name": "Mithril cannonball",
+          "strategy": "patient",
+          "posted_capital_gp": 1551000,
+          "expected_profit_gp": 27114,
+          "filled_qty": 404,
+          "target_sold_qty": 404,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 5252,
+          "forced_exit_price": null,
+          "capital_hours": 6659712.0,
+          "fill_rate": 0.0367,
+          "expected_return_per_posted_capital_hour": 0.0014568
+        },
+        {
+          "id": 855,
+          "name": "Yew longbow",
+          "strategy": "patient",
+          "posted_capital_gp": 8892000,
+          "expected_profit_gp": 61540,
+          "filled_qty": 0,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 0,
+          "capital_hours": 35568000,
+          "fill_rate": 0.0,
+          "expected_return_per_posted_capital_hour": 0.00057674
+        },
+        {
+          "id": 30619,
+          "name": "Bounty supply crate (anglerfish)",
+          "strategy": "patient",
+          "posted_capital_gp": 330300,
+          "expected_profit_gp": 43500,
+          "filled_qty": 0,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 0,
+          "capital_hours": 1321200,
+          "fill_rate": 0.0,
+          "expected_return_per_posted_capital_hour": 0.01097487
+        },
+        {
+          "id": 4089,
+          "name": "Mystic hat",
+          "strategy": "patient",
+          "posted_capital_gp": 351462,
+          "expected_profit_gp": 23902,
+          "filled_qty": 0,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 0,
+          "capital_hours": 1405848,
+          "fill_rate": 0.0,
+          "expected_return_per_posted_capital_hour": 0.00566728
+        },
+        {
+          "id": 5416,
+          "name": "Bananas(5)",
+          "strategy": "patient",
+          "posted_capital_gp": 71875,
+          "expected_profit_gp": 23920,
+          "filled_qty": 115,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 115,
+          "actual_profit_gp": -4025,
+          "forced_exit_price": 602,
+          "capital_hours": 862500,
+          "fill_rate": 1.0,
+          "expected_return_per_posted_capital_hour": 0.02773333
+        },
+        {
+          "id": 29110,
+          "name": "Raw pyre fox",
+          "strategy": "patient-probe",
+          "posted_capital_gp": 2660600,
+          "expected_profit_gp": 112448,
+          "filled_qty": 0,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 0,
+          "capital_hours": 10642400,
+          "fill_rate": 0.0,
+          "expected_return_per_posted_capital_hour": 0.00352201
+        }
+      ],
+      "planned_capital_gp": 36157093,
+      "expected_profit_gp": 570557,
+      "actual_profit_gp": -14988,
+      "capital_hours": 148787084.0,
+      "utility_gp": -89382,
+      "violations": []
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "source": "real_market_2026-07-26.json.gz",
+      "seed": 20260726,
+      "regime": "observed",
+      "attendance": "overnight",
+      "away_hours": 12,
+      "slot_cap": 8,
+      "cash_gp": 250000000,
+      "selected_item_ids": [
+        575,
+        26997,
+        855,
+        29110,
+        24585,
+        10828,
+        31638
+      ],
+      "selected_items": [
+        "Earth orb",
+        "Ensouled hellhound head",
+        "Yew longbow",
+        "Raw pyre fox",
+        "Looting bag note",
+        "Helm of neitiznot",
+        "Extended stamina potion(4)"
+      ],
+      "orders": [
+        {
+          "id": 575,
+          "name": "Earth orb",
+          "strategy": "patient",
+          "posted_capital_gp": 11494656,
+          "expected_profit_gp": 179712,
+          "filled_qty": 0,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 0,
+          "capital_hours": 45978624,
+          "fill_rate": 0.0,
+          "expected_return_per_posted_capital_hour": 0.00130287
+        },
+        {
+          "id": 26997,
+          "name": "Ensouled hellhound head",
+          "strategy": "patient",
+          "posted_capital_gp": 10805200,
+          "expected_profit_gp": 98421,
+          "filled_qty": 115,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 115,
+          "actual_profit_gp": -16215,
+          "forced_exit_price": 3325,
+          "capital_hours": 46348800,
+          "fill_rate": 0.0362,
+          "expected_return_per_posted_capital_hour": 0.00075906
+        },
+        {
+          "id": 855,
+          "name": "Yew longbow",
+          "strategy": "patient",
+          "posted_capital_gp": 8892000,
+          "expected_profit_gp": 61540,
+          "filled_qty": 0,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 0,
+          "capital_hours": 35568000,
+          "fill_rate": 0.0,
+          "expected_return_per_posted_capital_hour": 0.00057674
+        },
+        {
+          "id": 29110,
+          "name": "Raw pyre fox",
+          "strategy": "patient-probe",
+          "posted_capital_gp": 2660600,
+          "expected_profit_gp": 112448,
+          "filled_qty": 0,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 0,
+          "capital_hours": 10642400,
+          "fill_rate": 0.0,
+          "expected_return_per_posted_capital_hour": 0.00352201
+        },
+        {
+          "id": 24585,
+          "name": "Looting bag note",
+          "strategy": "patient-probe",
+          "posted_capital_gp": 1800560,
+          "expected_profit_gp": 71240,
+          "filled_qty": 0,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 0,
+          "capital_hours": 7202240,
+          "fill_rate": 0.0,
+          "expected_return_per_posted_capital_hour": 0.00329712
+        },
+        {
+          "id": 10828,
+          "name": "Helm of neitiznot",
+          "strategy": "patient-probe",
+          "posted_capital_gp": 3319680,
+          "expected_profit_gp": 84420,
+          "filled_qty": 0,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 0,
+          "actual_profit_gp": 0,
+          "capital_hours": 13278720,
+          "fill_rate": 0.0,
+          "expected_return_per_posted_capital_hour": 0.00211918
+        },
+        {
+          "id": 31638,
+          "name": "Extended stamina potion(4)",
+          "strategy": "patient-probe",
+          "posted_capital_gp": 4718480,
+          "expected_profit_gp": 109512,
+          "filled_qty": 287,
+          "target_sold_qty": 0,
+          "forced_exit_qty": 287,
+          "actual_profit_gp": -37597,
+          "forced_exit_price": 6988,
+          "capital_hours": 34900000,
+          "fill_rate": 0.4246,
+          "expected_return_per_posted_capital_hour": 0.0019341
+        }
+      ],
+      "planned_capital_gp": 43691176,
+      "expected_profit_gp": 717293,
+      "actual_profit_gp": -53812,
+      "capital_hours": 193918784,
+      "utility_gp": -150771,
+      "violations": []
+    },
+    {
+      "fixture": "wiki_cache_2026-07-26",
+      "source": "real_market_2026-07-26.json.gz",
+      "seed": 20260726,
       "regime": "observed",
       "attendance": "overnight",
       "away_hours": 12,

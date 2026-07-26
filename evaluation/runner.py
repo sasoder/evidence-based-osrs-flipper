@@ -22,6 +22,7 @@ DEFAULT_CONTRACT = ROOT / "contract.json"
 DEFAULT_FIXTURES = (
     ROOT / "fixtures/core_market.json",
     ROOT / "fixtures/real_market.json.gz",
+    ROOT / "fixtures/real_market_2026-07-26.json.gz",
 )
 PLAN_SECTIONS = ("buys", "patient_probes", "active_buys", "time_buys")
 STEP_SECONDS = {"5m": 300, "1h": 3_600, "6h": 21_600}
