@@ -24,11 +24,15 @@ Regenerate the permanent synthetic corpus:
 uv run python -m evaluation.generate_fixtures
 ```
 
-The observed multi-date corpus was imported from local Wiki cache envelopes with every eligible
-item retained:
+The frozen July 11 and July 22 corpus retains every eligible item. Do not regenerate it from a
+current local cache: cache entries are overwritten by API URL. Add later dates as separate
+immutable fixtures:
 
 ```bash
-uv run python -m evaluation.import_cache_fixture
+uv run python -m evaluation.import_cache_fixture \
+  --cache-dir /path/to/source-cache \
+  --dates 2026-07-26 \
+  --output evaluation/fixtures/real_market_2026-07-26.json.gz
 ```
 
 For a future corpus that is too large to check in, pass `--cohort-size N` to use the deterministic

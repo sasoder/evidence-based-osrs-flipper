@@ -19,11 +19,20 @@ class FixtureTests(unittest.TestCase):
         self.assertEqual(len(generate_fixtures.build()["fixtures"]), 5)
 
     def test_checked_in_real_corpus_has_disjoint_history_and_future(self) -> None:
-        path = ROOT / "evaluation/fixtures/real_market.json.gz"
-        fixtures = runner.load_fixtures([path])
+        fixtures = [
+            fixture
+            for fixture in runner.load_fixtures(list(runner.DEFAULT_FIXTURES))
+            if fixture["name"].startswith("wiki_cache_")
+        ]
 
-        self.assertGreaterEqual(len(fixtures), 2)
-        self.assertGreaterEqual(sum(len(row["items"]) for row in fixtures), 500)
+        self.assertEqual(
+            {fixture["name"]: len(fixture["items"]) for fixture in fixtures},
+            {
+                "wiki_cache_2026-07-11": 1_745,
+                "wiki_cache_2026-07-22": 351,
+                "wiki_cache_2026-07-26": 524,
+            },
+        )
         for fixture in fixtures:
             self.assertTrue(fixture["as_of"])
             self.assertEqual(
