@@ -106,9 +106,8 @@ def _market_maps(fixture: dict) -> tuple[dict, dict, dict, dict]:
     return items, mapping, latest, one_hour
 
 
-def _run_plan(fixture: dict, cash: int, attendance: dict, slot_cap: int,
-              strategies: str) -> dict:
-    fixture = selection_contract.visible_fixture(fixture)
+def _run_plan_visible(fixture: dict, cash: int, attendance: dict, slot_cap: int,
+                      strategies: str) -> dict:
     items, mapping, latest, one_hour = _market_maps(fixture)
     FrozenDateTime.instant = datetime.fromisoformat(fixture["as_of"].replace("Z", "+00:00"))
 
@@ -139,6 +138,17 @@ def _run_plan(fixture: dict, cash: int, attendance: dict, slot_cap: int,
             strategies=strategies,
             max_new_slots=slot_cap,
         )
+
+
+def _run_plan(fixture: dict, cash: int, attendance: dict, slot_cap: int,
+              strategies: str) -> dict:
+    return _run_plan_visible(
+        selection_contract.visible_fixture(fixture),
+        cash,
+        attendance,
+        slot_cap,
+        strategies,
+    )
 
 
 def _simulate_order(order: dict, item: dict, contract: dict) -> dict:
@@ -250,7 +260,7 @@ def evaluate(contract_path: Path = DEFAULT_CONTRACT,
         for attendance in contract["attendance"]:
             for slot_cap in contract["slot_caps"]:
                 for cash in contract["bankrolls_gp"]:
-                    result = _run_plan(
+                    result = _run_plan_visible(
                         visible, cash, attendance, slot_cap, contract["strategies"])
                     planner_orders = _orders(result)
                     normalized = [

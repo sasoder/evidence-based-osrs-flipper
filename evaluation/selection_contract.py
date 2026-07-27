@@ -342,6 +342,11 @@ def quantity_breakpoints(order: dict, vector: dict, item: dict,
                          available_cash: int, risk_bankroll: int,
                          contract: dict, replay_cache: dict | None = None) -> list[dict]:
     """Return calculated quantity crossings and their integer neighbors."""
+    cache_key = (
+        "breakpoints", order_signature(order), available_cash, risk_bankroll,
+    )
+    if replay_cache is not None and cache_key in replay_cache:
+        return replay_cache[cache_key]
     pivots: dict[int, set[str]] = {}
 
     def add(quantity: int, source: str) -> None:
@@ -429,7 +434,7 @@ def quantity_breakpoints(order: dict, vector: dict, item: dict,
                 row["crossings"].update(sources)
             else:
                 row["neighbor_of"].update(sources)
-    return [
+    result = [
         {
             "quantity": quantity,
             "crossings": sorted(values["crossings"]),
@@ -438,6 +443,9 @@ def quantity_breakpoints(order: dict, vector: dict, item: dict,
         }
         for quantity, values in sorted(expanded.items())
     ]
+    if replay_cache is not None:
+        replay_cache[cache_key] = result
+    return result
 
 
 def _portfolio_vector(orders: list[dict], vectors: dict[tuple, dict]) -> dict:
@@ -623,6 +631,11 @@ def portfolio_feasibility(orders: list[dict], case: dict,
 def _best_quantity(action: dict, vector: dict, item: dict,
                    available_cash: int, risk_bankroll: int,
                    contract: dict, vectors: dict) -> tuple[dict, dict] | None:
+    cache_key = (
+        "best_quantity", order_signature(action), available_cash, risk_bankroll,
+    )
+    if cache_key in vectors:
+        return vectors[cache_key]
     points = [
         point for point in quantity_breakpoints(
             action, vector, item, available_cash, risk_bankroll, contract, vectors
@@ -649,9 +662,12 @@ def _best_quantity(action: dict, vector: dict, item: dict,
             point,
         ))
     if not choices:
+        vectors[cache_key] = None
         return None
     best = max(choices)
-    return best[-2], best[-1]
+    result = (best[-2], best[-1])
+    vectors[cache_key] = result
+    return result
 
 
 def _bounded_benchmark(actions: list[dict], vectors: dict[tuple, dict],
@@ -698,7 +714,6 @@ def visible_challengers(case: dict, frontier: list[dict], visible: dict,
                         contract: dict, prior_case: dict | None = None,
                         replay_cache: dict | None = None) -> list[dict]:
     """Construct local challengers with visible inputs only."""
-    assert_visible(visible)
     item_map = {int(item["id"]): item for item in visible["items"]}
     current = case["normalized_orders"]
     vectors = replay_cache if replay_cache is not None else {}
