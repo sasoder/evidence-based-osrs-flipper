@@ -242,6 +242,7 @@ def evaluate(contract_path: Path = DEFAULT_CONTRACT,
         for fixture in fixtures
         for row in selection_contract.coverage_manifest(fixture, contract)
     ]
+    inputs_ready = time.perf_counter()
     cases = []
     for fixture in fixtures:
         visible = visible_fixtures[fixture["name"]]
@@ -293,6 +294,7 @@ def evaluate(contract_path: Path = DEFAULT_CONTRACT,
                     case["violations"] = _case_violations(case, contract)
                     cases.append(case)
 
+    planning_ready = time.perf_counter()
     frontiers = {
         fixture["name"]: selection_contract.canonical_frontier(
             visible_fixtures[fixture["name"]],
@@ -300,6 +302,7 @@ def evaluate(contract_path: Path = DEFAULT_CONTRACT,
         )
         for fixture in fixtures
     }
+    frontiers_ready = time.perf_counter()
     selection_groups: dict[tuple, list[dict]] = {}
     for case in cases:
         key = (case["fixture"], case["attendance"], case["slot_cap"])
@@ -320,6 +323,7 @@ def evaluate(contract_path: Path = DEFAULT_CONTRACT,
             )
             prior = case
 
+    characterization_ready = time.perf_counter()
     dominance = _dominance_violations(cases, contract)
     case_violations = [
         {"fixture": case["fixture"], "attendance": case["attendance"],
@@ -351,6 +355,15 @@ def evaluate(contract_path: Path = DEFAULT_CONTRACT,
     }
     selection_summary = selection_contract.summarize(cases, frontiers)
     elapsed = time.perf_counter() - started
+    runtime_breakdown = {
+        "input_projection": inputs_ready - started,
+        "planner_matrix": planning_ready - inputs_ready,
+        "frontier_construction": frontiers_ready - planning_ready,
+        "challenger_characterization":
+            characterization_ready - frontiers_ready,
+        "result_summary":
+            time.perf_counter() - characterization_ready,
+    }
     return {
         "schema_version": 2,
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
@@ -394,6 +407,9 @@ def evaluate(contract_path: Path = DEFAULT_CONTRACT,
             "dominance_violations": len(dominance),
             "hard_invariants_pass": not case_violations and not dominance,
             "complete_evaluator_runtime_seconds": round(elapsed, 3),
+            "runtime_breakdown_seconds": {
+                key: round(value, 3) for key, value in runtime_breakdown.items()
+            },
         },
         "selection_contract_v2": {
             "status": "report_only_characterization",
