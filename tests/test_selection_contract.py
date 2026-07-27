@@ -201,6 +201,17 @@ class SelectionContractTests(unittest.TestCase):
             selection.EXECUTABLE_FIELDS,
         )
 
+    def test_canonical_frontier_cannot_be_suppressed_by_planner_output(self) -> None:
+        visible = selection.visible_fixture(self.fixture([self.item()]))
+
+        frontier = selection.canonical_frontier(visible, self.contract)
+
+        self.assertTrue(frontier)
+        self.assertNotIn(
+            "planned_orders", inspect.signature(selection.canonical_frontier).parameters
+        )
+        self.assertEqual({row["item_id"] for row in frontier}, {1})
+
     def test_coverage_is_qualified_by_fixture_item_lane_and_as_of(self) -> None:
         manifest = selection.coverage_manifest(
             self.fixture([self.item()]), self.contract

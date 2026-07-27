@@ -19,6 +19,7 @@ EXECUTABLE_FIELDS = (
     "item_id", "side", "quantity", "buy_price", "sell_target",
     "cancel_after", "hard_exit_after",
 )
+FRONTIER_ITEMS_PER_LANE = 8
 
 
 def strategy(row: dict) -> str:
@@ -228,22 +229,42 @@ def coverage_key(fixture: str, item_id: int, lane: str, as_of: str) -> tuple:
     return fixture, int(item_id), lane, as_of
 
 
-def canonical_frontier(visible: dict, planned_orders: list[dict], contract: dict) -> list[dict]:
-    """Build the explicit bounded planner-emission item/lane frontier."""
+def canonical_frontier(visible: dict, contract: dict) -> list[dict]:
+    """Build a bounded visible-data frontier independent of planner output."""
     assert_visible(visible)
-    available = {int(item["id"]) for item in visible["items"]}
-    actions: dict[tuple, dict] = {}
-    for row in planned_orders:
-        order = normalize_order(row, contract)
-        if order["item_id"] not in available:
-            raise ValueError("planner emitted an item outside visible input")
-        key = action_signature(order)
-        actions.setdefault(key, {**order, "observed_quantities": set()})
-        actions[key]["observed_quantities"].add(order["quantity"])
-    return [
-        {**action, "observed_quantities": sorted(action["observed_quantities"])}
-        for _, action in sorted(actions.items())
-    ]
+    frontier = []
+    for lane_name, lane in contract["simulation"].items():
+        ranked = []
+        for item in visible["items"]:
+            buy = int(item.get("latest", {}).get("low") or 0)
+            target = int(item.get("latest", {}).get("high") or 0)
+            if buy <= 0 or target - buy - ge_tax.sale_tax(target) <= 0:
+                continue
+            action = {
+                "item_id": int(item["id"]),
+                "side": "buy",
+                "quantity": 1,
+                "buy_price": buy,
+                "sell_target": target,
+                "cancel_after": round(float(lane["entry_hours"]) * 3_600),
+                "hard_exit_after": round(float(lane["hold_hours"]) * 3_600),
+                "lane": lane_name,
+                "name": item["name"],
+                "observed_quantities": [1],
+            }
+            vector = replay_vector(action, item, contract)
+            if not vector["blocks"]:
+                continue
+            visible_utility = sum(
+                (row["utility"] for row in vector["blocks"].values()),
+                Fraction(),
+            ) / len(vector["blocks"])
+            ranked.append((visible_utility, vector["opportunity_episode_count"],
+                           -action["item_id"], action))
+        frontier.extend(
+            row[-1] for row in sorted(ranked, reverse=True)[:FRONTIER_ITEMS_PER_LANE]
+        )
+    return sorted(frontier, key=lambda row: (row["lane"], row["item_id"]))
 
 
 def _history_blocks(item: dict, lane: dict) -> list[tuple[int, list[dict]]]:

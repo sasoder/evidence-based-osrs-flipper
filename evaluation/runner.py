@@ -238,7 +238,6 @@ def evaluate(contract_path: Path = DEFAULT_CONTRACT,
         for row in selection_contract.coverage_manifest(fixture, contract)
     ]
     cases = []
-    planned_by_fixture: dict[str, list[dict]] = {}
     for fixture in fixtures:
         visible = visible_fixtures[fixture["name"]]
         item_map = {int(item["id"]): item for item in fixture["items"]}
@@ -248,7 +247,6 @@ def evaluate(contract_path: Path = DEFAULT_CONTRACT,
                     result = _run_plan(
                         visible, cash, attendance, slot_cap, contract["strategies"])
                     planner_orders = _orders(result)
-                    planned_by_fixture.setdefault(fixture["name"], []).extend(planner_orders)
                     normalized = [
                         selection_contract.normalize_order(row, contract)
                         for row in planner_orders
@@ -290,7 +288,6 @@ def evaluate(contract_path: Path = DEFAULT_CONTRACT,
     frontiers = {
         fixture["name"]: selection_contract.canonical_frontier(
             visible_fixtures[fixture["name"]],
-            planned_by_fixture.get(fixture["name"], []),
             contract,
         )
         for fixture in fixtures
@@ -393,7 +390,7 @@ def evaluate(contract_path: Path = DEFAULT_CONTRACT,
         "selection_contract_v2": {
             "status": "report_only_characterization",
             "frontier_policy":
-                "deduplicated executable planner emissions per fixture/item/lane",
+                "top eight current-quote actions per fixture/lane by visible replay utility",
             "frontier_is_globally_optimal": False,
             "coverage_manifest": coverage_rows,
             "characterization": selection_summary,
