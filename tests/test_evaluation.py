@@ -101,8 +101,11 @@ class SimulationTests(unittest.TestCase):
              "lowPriceVolume": 1_000, "highPriceVolume": 1_000}
             for _ in range(16)
         ]}}
+        order = runner.selection_contract.normalize_order(
+            {**row, "_evaluator_lane": "patient"}, self.contract
+        )
 
-        result = runner._simulate_order(row, item, self.contract)
+        result = runner._simulate_order(order, item, self.contract)
 
         self.assertEqual(result["filled_qty"], 0)
         self.assertEqual(result["actual_profit_gp"], 0)
@@ -121,7 +124,12 @@ class SimulationTests(unittest.TestCase):
             "lowPriceVolume": 100, "highPriceVolume": 100,
         } for _ in range(12)]
 
-        result = runner._simulate_order(row, {"future": {"1h": future}}, self.contract)
+        order = runner.selection_contract.normalize_order(
+            {**row, "_evaluator_lane": "patient"}, self.contract
+        )
+        result = runner._simulate_order(
+            order, {"future": {"1h": future}}, self.contract
+        )
 
         self.assertEqual(result["filled_qty"], 10)
         self.assertEqual(result["forced_exit_qty"], 10)

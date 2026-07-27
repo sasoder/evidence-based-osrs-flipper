@@ -8,10 +8,11 @@ from pathlib import Path
 from unittest.mock import patch
 
 from evaluation import runner, selection_contract as selection
-from flipper import ge_tax
+from flipper import ge_tax, signals
 
 
 ROOT = Path(__file__).resolve().parents[1]
+AS_OF_TS = 1_767_225_600
 
 
 def bucket(timestamp: int, low: int = 100, high: int = 120,
@@ -25,9 +26,9 @@ def bucket(timestamp: int, low: int = 100, high: int = 120,
     }
 
 
-def blocks(outcomes: list[str]) -> list[dict]:
+def blocks(outcomes: list[str], start: int = 0) -> list[dict]:
     rows = []
-    timestamp = 0
+    timestamp = start
     for outcome in outcomes:
         rows.extend(bucket(timestamp + hour * 3_600) for hour in range(4))
         if outcome == "profit":
@@ -36,6 +37,10 @@ def blocks(outcomes: list[str]) -> list[dict]:
                 for hour in range(4, 16)
             )
         elif outcome == "loss":
+            rows[-4:] = [
+                bucket(timestamp + hour * 3_600, low=100, high=90)
+                for hour in range(4)
+            ]
             rows.extend(
                 bucket(timestamp + hour * 3_600, low=50, high=90)
                 for hour in range(4, 16)
@@ -69,7 +74,10 @@ class SelectionContractTests(unittest.TestCase):
             "latest": {"low": 100, "high": 120},
             "one_hour": {"lowPriceVolume": 10, "highPriceVolume": 10},
             "history": {"1h": history if history is not None else blocks(["profit"] * 3)},
-            "future": {"1h": future if future is not None else blocks(["profit"])},
+            "future": {
+                "1h": future if future is not None
+                else blocks(["profit"], AS_OF_TS + 3_600)
+            },
         }
 
     def fixture(self, items: list[dict]) -> dict:
@@ -81,7 +89,7 @@ class SelectionContractTests(unittest.TestCase):
 
     def order(self, item_id: int = 1, quantity: int = 1,
               buy_price: int = 100, sell_target: int = 120,
-              name: str | None = None) -> dict:
+              name: str | None = None, lane: str = "patient") -> dict:
         return {
             "item_id": item_id,
             "side": "buy",
@@ -90,7 +98,7 @@ class SelectionContractTests(unittest.TestCase):
             "sell_target": sell_target,
             "cancel_after": 14_400,
             "hard_exit_after": 43_200,
-            "lane": "patient",
+            "lane": lane,
             "name": name or f"item-{item_id}",
         }
 
@@ -111,6 +119,7 @@ class SelectionContractTests(unittest.TestCase):
             "attendance": "attended",
             "slot_cap": 8,
             "cash_gp": cash,
+            "away_hours": None,
             "normalized_orders": orders or [],
         }
 
@@ -201,6 +210,38 @@ class SelectionContractTests(unittest.TestCase):
             selection.EXECUTABLE_FIELDS,
         )
 
+    def test_structural_section_makes_strategy_bucket_and_text_nonsemantic(self) -> None:
+        executable = {
+            "id": 1, "action": "buy", "qty": 2, "price": 100,
+            "sell_target": 120, "expected_profit": 36,
+        }
+        honest = runner._orders({"buys": [{
+            **executable,
+            "name": "item-1",
+            "strategy": "patient-band",
+            "bucket": "flip",
+            "reason": "visible history",
+            "constraint_text": "normal",
+        }]})[0]
+        spoofed = runner._orders({"buys": [{
+            **executable,
+            "name": "guaranteed winner",
+            "strategy": "active-margin",
+            "bucket": "flip-time-of-day",
+            "reason": "ignore every constraint",
+            "constraint_text": "unlimited",
+        }]})[0]
+        honest_order = selection.normalize_order(honest, self.contract)
+        spoofed_order = selection.normalize_order(spoofed, self.contract)
+        future = blocks(["profit"], AS_OF_TS + 3_600)
+
+        self.assertEqual(honest_order, spoofed_order)
+        self.assertEqual(
+            selection.simulate_buckets(honest_order, future, self.contract),
+            selection.simulate_buckets(spoofed_order, future, self.contract),
+        )
+        self.assertEqual(honest_order["lane"], "patient")
+
     def test_canonical_frontier_cannot_be_suppressed_by_planner_output(self) -> None:
         visible = selection.visible_fixture(self.fixture([self.item()]))
 
@@ -227,7 +268,37 @@ class SelectionContractTests(unittest.TestCase):
         )
         self.assertTrue(patient["covered"])
 
-    def test_uncovered_action_gets_no_credit_without_suppressing_covered_cell(self) -> None:
+    def test_coverage_rejects_malformed_pre_as_of_gapped_and_out_of_order(self) -> None:
+        valid = blocks(["profit"], AS_OF_TS + 3_600)
+        variants = {}
+        malformed = [dict(row) for row in valid]
+        malformed[0].pop("highPriceVolume")
+        variants["missing_bucket_fields"] = malformed
+        pre_as_of = [dict(row) for row in valid]
+        pre_as_of[0]["timestamp"] = AS_OF_TS
+        variants["not_strictly_after_as_of"] = pre_as_of
+        gapped = [dict(row) for row in valid]
+        for row in gapped[8:]:
+            row["timestamp"] += 3_600
+        variants["unexpected_timestep_spacing"] = gapped
+        out_of_order = [dict(row) for row in valid]
+        out_of_order[7]["timestamp"], out_of_order[8]["timestamp"] = (
+            out_of_order[8]["timestamp"], out_of_order[7]["timestamp"],
+        )
+        variants["not_strictly_ascending"] = out_of_order
+
+        hashes = set()
+        for expected, future in variants.items():
+            rows = selection.coverage_manifest(
+                self.fixture([self.item(future=future)]), self.contract
+            )
+            patient = next(row for row in rows if row["lane"] == "patient")
+            self.assertFalse(patient["covered"])
+            self.assertIn(expected, patient["reasons"])
+            hashes.add(selection.coverage_manifest_sha256(rows))
+        self.assertEqual(len(hashes), len(variants))
+
+    def test_uncovered_action_reports_raw_cells_without_positive_credit(self) -> None:
         covered_order = self.order(1)
         uncovered_order = self.order(2)
         coverage_rows = [self.coverage(1, True), self.coverage(2, False)]
@@ -246,26 +317,32 @@ class SelectionContractTests(unittest.TestCase):
             "fixture",
             "2026-01-01T00:00:00+00:00",
             {
-                1: {"future": {"1h": blocks(["profit"])}},
-                2: {"future": {"1h": blocks(["profit"])}},
+                1: {"future": {"1h": blocks(["profit"], AS_OF_TS + 3_600)}},
+                2: {"future": {"1h": blocks(["profit"], AS_OF_TS + 3_600)}},
             },
             coverage,
             self.contract,
         )
 
-        cells = {row["item_id"]: row for row in record["withheld_scoring_cells"]}
-        self.assertGreater(cells[1]["performance_credit_gp"], 0)
-        self.assertEqual(cells[2]["performance_credit_gp"], 0)
-        self.assertIsNone(record["withheld_incremental_utility_gp"])
+        cells = {row["item_id"]: row for row in record["changed_action_coverage"]}
+        self.assertIsNotNone(cells[1]["withheld_utility_gp"])
+        self.assertIsNone(cells[2]["withheld_utility_gp"])
+        self.assertNotIn("performance_credit_gp", cells[1])
+        self.assertIsNone(record["raw_covered_outcome_delta_gp"])
         self.assertEqual(coverage_rows, [self.coverage(1, True), self.coverage(2, False)])
 
     def test_replay_uses_non_overlapping_blocks_and_distinct_episodes(self) -> None:
         vector = selection.replay_vector(
-            self.order(), self.item(history=blocks(["profit", "profit"])), self.contract
+            self.order(),
+            self.item(history=[
+                bucket(hour * 3_600, low=100, high=120)
+                for hour in range(32)
+            ]),
+            self.contract,
         )
 
         self.assertEqual(vector["evidence_count"], 2)
-        self.assertGreater(vector["opportunity_episode_count"], 1)
+        self.assertEqual(vector["opportunity_episode_count"], 1)
         starts = sorted(vector["blocks"])
         self.assertEqual(starts[1] - starts[0], 16 * 3_600)
 
@@ -279,13 +356,125 @@ class SelectionContractTests(unittest.TestCase):
                     3: {"profit": -1, "utility": Fraction(-1)},
                 },
                 "opportunity_episode_count": 3,
+                "evidence_count": 3,
             }
         }
 
-        metrics = selection._metrics([], [order], vectors, 10_000, self.contract)
+        metrics = selection._metrics(
+            [], [order], [order], vectors, 10_000, self.contract
+        )
 
-        self.assertTrue(metrics["raw_positive_mean_qualification"])
+        self.assertTrue(metrics["raw_positive_mean"])
         self.assertFalse(metrics["all_window_dominance"])
+
+    def test_all_window_dominance_requires_one_strict_improvement(self) -> None:
+        order = self.order()
+        vectors = {
+            selection.order_signature(order): {
+                "blocks": {
+                    1: {"profit": 0, "utility": Fraction()},
+                    2: {"profit": 0, "utility": Fraction()},
+                },
+                "opportunity_episode_count": 2,
+                "evidence_count": 2,
+            }
+        }
+
+        equal = selection._metrics(
+            [], [order], [order], vectors, 10_000, self.contract
+        )
+        vectors[selection.order_signature(order)]["blocks"][2] = {
+            "profit": 1, "utility": Fraction(1),
+        }
+        strict = selection._metrics(
+            [], [order], [order], vectors, 10_000, self.contract
+        )
+
+        self.assertFalse(equal["all_window_dominance"])
+        self.assertTrue(strict["all_window_dominance"])
+
+    def test_changed_action_cannot_inherit_episodes_from_unchanged_order(self) -> None:
+        unchanged = self.order(1)
+        changed = self.order(2)
+        vectors = {
+            selection.order_signature(unchanged): {
+                "blocks": {
+                    index: {"profit": 1, "utility": Fraction(1)}
+                    for index in range(3)
+                },
+                "opportunity_episode_count": 10,
+                "evidence_count": 3,
+            },
+            selection.order_signature(changed): {
+                "blocks": {
+                    index: {"profit": 1, "utility": Fraction(1)}
+                    for index in range(3)
+                },
+                "opportunity_episode_count": 1,
+                "evidence_count": 3,
+            },
+        }
+
+        metrics = selection._metrics(
+            [unchanged], [unchanged, changed], [changed],
+            vectors, 10_000, self.contract,
+        )
+
+        self.assertEqual(
+            metrics["changed_action_distinct_opportunity_episode_count"], 1
+        )
+        self.assertFalse(metrics["provisional_3_block_2_episode"])
+
+    def test_unsafe_positive_mean_is_not_in_provisional_risk_conjunction(self) -> None:
+        order = self.order()
+        vectors = {
+            selection.order_signature(order): {
+                "blocks": {
+                    1: {"profit": 1_000, "utility": Fraction(1_000)},
+                    2: {"profit": 1_000, "utility": Fraction(1_000)},
+                    3: {"profit": -100, "utility": Fraction(-100)},
+                },
+                "opportunity_episode_count": 3,
+                "evidence_count": 3,
+            }
+        }
+
+        metrics = selection._metrics(
+            [], [order], [order], vectors, 1_000, self.contract
+        )
+
+        self.assertTrue(metrics["raw_positive_mean"])
+        self.assertTrue(metrics["provisional_3_block_2_episode"])
+        self.assertFalse(metrics["lane_local_position_risk_compliant"])
+        self.assertFalse(
+            metrics["provisional_positive_mean_evidence_and_lane_risk"]
+        )
+        self.assertFalse(metrics["full_portfolio_risk_assessed"])
+
+    def test_full_portfolio_feasibility_spans_lanes_cash_slots_and_attendance(self) -> None:
+        patient = self.order(1, quantity=6)
+        active = {
+            **self.order(2, quantity=5, lane="active-margin"),
+            "cancel_after": 1_800,
+            "hard_exit_after": 5_400,
+        }
+        items = {1: self.item(1, limit=10), 2: self.item(2, limit=10)}
+        case = self.case(cash=1_000)
+        case["slot_cap"] = 1
+        case["away_hours"] = 2
+
+        result = selection.portfolio_feasibility(
+            [patient, active], case, items
+        )
+
+        self.assertFalse(result["feasible"])
+        self.assertEqual(
+            set(result["reasons"]), {"cash", "slots", "attendance"}
+        )
+        duplicate = selection.portfolio_feasibility(
+            [patient, {**active, "item_id": 1}], self.case(), items
+        )
+        self.assertIn("duplicate_item", duplicate["reasons"])
 
     def test_portfolio_utility_is_accumulated_exactly_then_rounded_once(self) -> None:
         first = self.order(1)
@@ -294,15 +483,17 @@ class SelectionContractTests(unittest.TestCase):
             selection.order_signature(first): {
                 "blocks": {1: {"profit": 1, "utility": Fraction(1, 2)}},
                 "opportunity_episode_count": 1,
+                "evidence_count": 1,
             },
             selection.order_signature(second): {
                 "blocks": {1: {"profit": 1, "utility": Fraction(1, 2)}},
                 "opportunity_episode_count": 1,
+                "evidence_count": 1,
             },
         }
 
         metrics = selection._metrics(
-            [], [first, second], vectors, 10_000, self.contract
+            [], [first, second], [first, second], vectors, 10_000, self.contract
         )
 
         self.assertEqual(metrics["mean_incremental_visible_utility_gp"], 1)
@@ -324,11 +515,14 @@ class SelectionContractTests(unittest.TestCase):
             if row["kind"] == "one_order_addition"
         ]
         self.assertTrue(additions)
-        self.assertTrue(additions[0]["raw_positive_mean_qualification"])
-        self.assertFalse(analysis["acceptance_gate"])
+        self.assertTrue(additions[0]["raw_positive_mean"])
+        self.assertNotIn("acceptance_gate", analysis)
 
     def test_later_profit_without_visible_support_does_not_qualify(self) -> None:
-        item = self.item(history=blocks(["no_touch"] * 3), future=blocks(["profit"]))
+        item = self.item(
+            history=blocks(["no_touch"] * 3),
+            future=blocks(["profit"], AS_OF_TS + 3_600),
+        )
         frontier = [{**self.order(), "observed_quantities": [1]}]
         analysis = selection.analyze_case(
             self.case(),
@@ -343,11 +537,14 @@ class SelectionContractTests(unittest.TestCase):
             if row["kind"] == "one_order_addition"
         )
 
-        self.assertFalse(addition["raw_positive_mean_qualification"])
-        self.assertGreater(addition["withheld_incremental_utility_gp"], 0)
+        self.assertFalse(addition["raw_positive_mean"])
+        self.assertGreater(addition["raw_covered_outcome_delta_gp"], 0)
 
     def test_visible_support_can_later_lose(self) -> None:
-        item = self.item(history=blocks(["profit"] * 3), future=blocks(["loss"]))
+        item = self.item(
+            history=blocks(["profit"] * 3),
+            future=blocks(["loss"], AS_OF_TS + 3_600),
+        )
         frontier = [{**self.order(), "observed_quantities": [1]}]
         analysis = selection.analyze_case(
             self.case(),
@@ -362,33 +559,132 @@ class SelectionContractTests(unittest.TestCase):
             if row["kind"] == "one_order_addition"
         )
 
-        self.assertTrue(addition["raw_positive_mean_qualification"])
-        self.assertLess(addition["withheld_incremental_utility_gp"], 0)
+        self.assertTrue(addition["raw_positive_mean"])
+        self.assertLess(addition["raw_covered_outcome_delta_gp"], 0)
 
     def test_breakpoints_include_capacity_constraints_and_integer_neighbors(self) -> None:
         item = self.item(limit=20)
         action = {**self.order(quantity=4), "observed_quantities": [4]}
         vector = selection.replay_vector(action, item, self.contract)
         points = selection.quantity_breakpoints(
-            action, vector, item, cash=2_000, contract=self.contract
+            action, vector, item,
+            available_cash=2_000,
+            risk_bankroll=2_000,
+            contract=self.contract,
         )
-        by_quantity = {row["quantity"]: row["sources"] for row in points}
+        by_quantity = {row["quantity"]: row for row in points}
 
-        self.assertLessEqual(max(by_quantity), 20)
+        self.assertLessEqual(max(
+            quantity for quantity, row in by_quantity.items() if row["feasible"]
+        ), 20)
         self.assertTrue({"fill_capacity", "target_capacity"}.intersection(
-            source for sources in by_quantity.values() for source in sources
+            source for row in by_quantity.values() for source in row["crossings"]
         ))
         self.assertTrue({"affordability", "ge_limit"}.intersection(
-            source for sources in by_quantity.values() for source in sources
+            source for row in by_quantity.values() for source in row["crossings"]
         ))
         self.assertIn(3, by_quantity)
         self.assertIn(4, by_quantity)
         self.assertIn(5, by_quantity)
-        self.assertIn("integer_neighbor", by_quantity[3])
-        self.assertIn("integer_neighbor", by_quantity[5])
-        self.assertTrue(any(
-            "reservation_rounding" in sources for sources in by_quantity.values()
-        ))
+        self.assertIn("current_quantity", by_quantity[3]["neighbor_of"])
+        self.assertIn("current_quantity", by_quantity[5]["neighbor_of"])
+
+    def test_breakpoint_crossings_match_behavior_on_both_integer_sides(self) -> None:
+        history = []
+        for block_index in range(3):
+            start = block_index * 16 * 3_600
+            history.extend(
+                bucket(
+                    start + hour * 3_600,
+                    low=100,
+                    high=90,
+                    low_volume=100,
+                    high_volume=10,
+                )
+                for hour in range(4)
+            )
+            history.append(bucket(
+                start + 4 * 3_600,
+                low=50,
+                high=120,
+                low_volume=10,
+                high_volume=50,
+            ))
+            history.extend(
+                bucket(start + hour * 3_600, low=50, high=90)
+                for hour in range(5, 16)
+            )
+        item = self.item(history=history, limit=20)
+        action = {**self.order(), "observed_quantities": [1]}
+        vector = selection.replay_vector(action, item, self.contract)
+        points = selection.quantity_breakpoints(
+            action, vector, item,
+            available_cash=10_000,
+            risk_bankroll=10_000,
+            contract=self.contract,
+        )
+        by_quantity = {row["quantity"]: row for row in points}
+
+        expected = {
+            5: "target_capacity",
+            7: "utility_zero_crossing",
+            9: "position_loss_crossing",
+            13: "lane_local_portfolio_loss_crossing",
+            20: "ge_limit",
+            40: "fill_capacity",
+            100: "affordability",
+        }
+        for quantity, source in expected.items():
+            self.assertIn(source, by_quantity[quantity]["crossings"])
+            self.assertIn(source, by_quantity[quantity - 1]["neighbor_of"])
+            self.assertIn(source, by_quantity[quantity + 1]["neighbor_of"])
+        self.assertIn("forced_exit_crossing", by_quantity[5]["crossings"])
+        self.assertIn("forced_exit_crossing", by_quantity[4]["neighbor_of"])
+        self.assertIn("forced_exit_crossing", by_quantity[6]["neighbor_of"])
+
+        def stats(quantity: int) -> tuple[Fraction, int]:
+            rows = selection.replay_vector(
+                {**action, "quantity": quantity}, item, self.contract
+            )["blocks"].values()
+            return (
+                sum((row["utility"] for row in rows), Fraction()),
+                max(max(0, -row["profit"]) for row in rows),
+            )
+
+        self.assertGreater(stats(6)[0], 0)
+        self.assertLess(stats(7)[0], 0)
+        self.assertLessEqual(stats(8)[1], 100)
+        self.assertGreater(stats(9)[1], 100)
+        self.assertLessEqual(stats(12)[1], 300)
+        self.assertGreater(stats(13)[1], 300)
+        self.assertTrue(by_quantity[20]["feasible"])
+        self.assertFalse(by_quantity[21]["feasible"])
+        selected, point = selection._best_quantity(
+            action, vector, item, 10_000, 10_000, self.contract, {}
+        )
+        self.assertEqual(selected["quantity"], 5)
+        self.assertIn("target_capacity", point["crossings"])
+
+    def test_production_backtest_and_unit_stub_include_adverse_risk_field(self) -> None:
+        from tests.test_plan import _bt
+
+        rows = [
+            bucket(hour * 3_600, low=100, high=120, low_volume=100, high_volume=100)
+            for hour in range(50)
+        ]
+        with (
+            patch.object(signals.prices, "mapping_by_id",
+                         return_value={1: {"id": 1, "name": "item-1"}}),
+            patch.object(signals.prices, "timeseries", return_value=rows),
+        ):
+            production = signals.backtest_signal(
+                1, lookback=20, max_hold_points=12
+            )
+
+        self.assertIsNotNone(production)
+        self.assertIn("max_adverse_pct", production)
+        self.assertIn("max_adverse_pct", _bt())
+        self.assertLessEqual(set(_bt()), set(production))
 
     def test_equality_based_bankroll_groups_ignore_labels_not_executable_changes(self) -> None:
         cases = []
@@ -403,18 +699,29 @@ class SelectionContractTests(unittest.TestCase):
                 "selection_characterization": {"challengers": [{
                     "lane": "patient",
                     "all_window_dominance": False,
-                    "raw_positive_mean_qualification": True,
-                    "evidence_qualified": True,
+                    "raw_positive_mean": True,
+                    "provisional_3_block_2_episode": True,
+                    "lane_local_position_risk_compliant": True,
+                    "lane_local_portfolio_risk_compliant": True,
+                    "provisional_positive_mean_evidence_and_lane_risk": True,
                 }]},
             })
 
         summary = selection.summarize(cases, {"fixture": [self.order()]})
 
         self.assertEqual(
-            summary["unchanged_bankroll_transitions_with_qualifying_challengers"], 5
+            summary[
+                "unchanged_bankroll_transitions_with_provisional_positive_mean_"
+                "evidence_and_lane_risk"
+            ],
+            5,
         )
         self.assertEqual(
-            summary["flat_six_bankroll_groups_with_qualifying_challengers"], 1
+            summary[
+                "flat_six_bankroll_groups_with_provisional_positive_mean_"
+                "evidence_and_lane_risk"
+            ],
+            1,
         )
 
     @unittest.expectedFailure
@@ -435,7 +742,10 @@ class SelectionContractTests(unittest.TestCase):
             bucket(hour * 3_600, low=950, high=1_000)
             for hour in range(4, 16)
         ]
-        result = selection.simulate_buckets(row, future, self.contract)
+        order = selection.normalize_order(
+            {**row, "_evaluator_lane": "patient"}, self.contract
+        )
+        result = selection.simulate_buckets(order, future, self.contract)
         runtime_profit = ge_tax.net_sale_price(2347, "Hammer", 1_000) - 900
 
         self.assertEqual(result["actual_profit_gp"], runtime_profit)
