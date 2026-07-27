@@ -1,37 +1,25 @@
-"""Report-only evaluator-v2 selection characterization.
-
-The policy is intentionally bounded: its canonical frontier contains only executable
-item/lane orders emitted by the planner somewhere in the configured evaluation matrix.
-It is useful for local selection comparisons, but is not a globally optimal action frontier.
-"""
+"""Report-only selection characterization over a bounded visible-data frontier."""
 
 from __future__ import annotations
 
+import hashlib
+import json
 import math
+from datetime import datetime
 from fractions import Fraction
 
 from flipper import ge_tax
 
 
 STEP_SECONDS = {"5m": 300, "1h": 3_600, "6h": 21_600}
-WITHHELD_ITEM_FIELDS = {"future", "coverage", "coverage_flags", "future_coverage"}
 EXECUTABLE_FIELDS = (
     "item_id", "side", "quantity", "buy_price", "sell_target",
     "cancel_after", "hard_exit_after",
 )
 FRONTIER_ITEMS_PER_LANE = 8
-
-
-def strategy(row: dict) -> str:
-    value = row.get("strategy")
-    if value == "patient-band":
-        return "patient"
-    return value or {
-        "flip": "patient",
-        "flip-patient-probe": "patient-probe",
-        "flip-active": "active-margin",
-        "flip-time-of-day": "time-of-day",
-    }.get(row.get("bucket"), "patient")
+REQUIRED_BUCKET_FIELDS = {
+    "timestamp", "avgLowPrice", "avgHighPrice", "lowPriceVolume", "highPriceVolume",
+}
 
 
 def visible_fixture(fixture: dict) -> dict:
@@ -58,7 +46,7 @@ def assert_visible(fixture: dict) -> None:
         if isinstance(value, dict):
             for key, nested in value.items():
                 lowered = key.lower()
-                if "coverage" in lowered or lowered == "future":
+                if "coverage" in lowered or lowered == "future" or lowered.startswith("future_"):
                     raise ValueError(f"withheld metadata reached visible input: {key}")
                 reject_metadata(nested)
         elif isinstance(value, list):
@@ -66,8 +54,6 @@ def assert_visible(fixture: dict) -> None:
                 reject_metadata(nested)
 
     reject_metadata(fixture)
-    for item in fixture.get("items", []):
-        assert not WITHHELD_ITEM_FIELDS.intersection(item)
 
 
 def withheld_items(fixture: dict) -> dict[int, dict]:
@@ -79,7 +65,7 @@ def withheld_items(fixture: dict) -> dict[int, dict]:
 
 
 def normalize_order(row: dict, contract: dict) -> dict:
-    lane = strategy(row)
+    lane = row["_evaluator_lane"]
     policy = contract["simulation"][lane]
     order = {
         "item_id": int(row["id"]),
@@ -93,7 +79,8 @@ def normalize_order(row: dict, contract: dict) -> dict:
     return {
         **order,
         "lane": lane,
-        "name": row.get("name") or str(row["id"]),
+        "name": str(row["id"]),
+        "expected_profit_gp": int(row.get("expected_profit") or 0),
     }
 
 
@@ -109,34 +96,21 @@ def action_signature(order: dict) -> tuple:
     return tuple(order[field] for field in EXECUTABLE_FIELDS if field != "quantity")
 
 
-def order_row(order: dict) -> dict:
-    return {
-        "id": order["item_id"],
-        "name": order.get("name") or str(order["item_id"]),
-        "action": order["side"],
-        "strategy": order["lane"],
-        "qty": order["quantity"],
-        "price": order["buy_price"],
-        "sell_target": order["sell_target"],
-        "expected_profit": 0,
-    }
-
-
 def _non_null_price(rows: list[dict], key: str, fallback: int) -> int:
     return next((int(row[key]) for row in reversed(rows) if row.get(key)), fallback)
 
 
-def simulate_buckets(row: dict, buckets: list[dict], contract: dict) -> dict:
+def simulate_buckets(order: dict, buckets: list[dict], contract: dict) -> dict:
     """Simulate one executable order against a supplied, already-separated bucket vector."""
-    lane_name = strategy(row)
+    lane_name = order["lane"]
     lane = contract["simulation"][lane_name]
     timestep = lane["timestep"]
     step_hours = Fraction(STEP_SECONDS[timestep], 3_600)
     entry_points = max(1, math.ceil(lane["entry_hours"] / float(step_hours)))
     hold_points = max(1, math.ceil(lane["hold_hours"] / float(step_hours)))
-    qty = int(row["qty"])
-    buy = int(row["price"])
-    target = int(row["sell_target"])
+    qty = order["quantity"]
+    buy = order["buy_price"]
+    target = order["sell_target"]
     participation = Fraction(str(lane["participation_rate"]))
 
     entry_rows = buckets[:entry_points]
@@ -151,11 +125,11 @@ def simulate_buckets(row: dict, buckets: list[dict], contract: dict) -> dict:
     )
     filled = min(qty, entry_capacity)
     posted_capital = qty * buy
-    expected_profit = int(row.get("expected_profit") or 0)
+    expected_profit = order.get("expected_profit_gp", 0)
     if not filled:
         capital_hours = Fraction(posted_capital) * Fraction(str(lane["entry_hours"]))
         return {
-            "id": row["id"], "name": row["name"], "strategy": lane_name,
+            "id": order["item_id"], "name": order["name"], "strategy": lane_name,
             "posted_capital_gp": posted_capital, "expected_profit_gp": expected_profit,
             "filled_qty": 0, "target_sold_qty": 0, "forced_exit_qty": 0,
             "actual_profit_gp": 0, "capital_hours": capital_hours,
@@ -188,7 +162,7 @@ def simulate_buckets(row: dict, buckets: list[dict], contract: dict) -> dict:
         + Fraction((qty - filled) * buy) * Fraction(str(lane["entry_hours"]))
     )
     return {
-        "id": row["id"], "name": row["name"], "strategy": lane_name,
+        "id": order["item_id"], "name": order["name"], "strategy": lane_name,
         "posted_capital_gp": posted_capital, "expected_profit_gp": expected_profit,
         "filled_qty": filled, "target_sold_qty": target_sold, "forced_exit_qty": forced,
         "actual_profit_gp": actual_profit,
@@ -209,10 +183,31 @@ def _required_buckets(lane: dict) -> int:
 
 def coverage_manifest(fixture: dict, contract: dict) -> list[dict]:
     manifest = []
+    as_of = int(datetime.fromisoformat(
+        fixture["as_of"].replace("Z", "+00:00")
+    ).timestamp())
     for item in fixture["items"]:
         for lane_name, lane in contract["simulation"].items():
             future = item.get("future", {}).get(lane["timestep"], [])
             required = _required_buckets(lane)
+            reasons = []
+            if len(future) < required:
+                reasons.append("incomplete_horizon")
+            if any(not REQUIRED_BUCKET_FIELDS.issubset(bucket) for bucket in future):
+                reasons.append("missing_bucket_fields")
+            timestamps = [bucket.get("timestamp") for bucket in future]
+            if any(not isinstance(timestamp, int) for timestamp in timestamps):
+                reasons.append("invalid_timestamp")
+            else:
+                if any(timestamp <= as_of for timestamp in timestamps):
+                    reasons.append("not_strictly_after_as_of")
+                if any(current <= prior for prior, current
+                       in zip(timestamps, timestamps[1:])):
+                    reasons.append("not_strictly_ascending")
+                step = STEP_SECONDS[lane["timestep"]]
+                if any(current - prior != step for prior, current
+                       in zip(timestamps, timestamps[1:])):
+                    reasons.append("unexpected_timestep_spacing")
             manifest.append({
                 "fixture": fixture["name"],
                 "item_id": int(item["id"]),
@@ -220,9 +215,21 @@ def coverage_manifest(fixture: dict, contract: dict) -> list[dict]:
                 "as_of": fixture["as_of"],
                 "available_buckets": len(future),
                 "required_buckets": required,
-                "covered": len(future) >= required,
+                "covered": not reasons,
+                "reasons": reasons,
             })
     return manifest
+
+
+def coverage_manifest_sha256(rows: list[dict]) -> str:
+    ordered = sorted(
+        rows,
+        key=lambda row: (
+            row["fixture"], row["item_id"], row["lane"], row["as_of"],
+        ),
+    )
+    payload = json.dumps(ordered, sort_keys=True, separators=(",", ":")).encode()
+    return hashlib.sha256(payload).hexdigest()
 
 
 def coverage_key(fixture: str, item_id: int, lane: str, as_of: str) -> tuple:
@@ -297,7 +304,7 @@ def replay_vector(order: dict, item: dict, contract: dict) -> dict:
     capacities = set()
     target_capacities = set()
     for block_id, buckets in blocks:
-        simulation = simulate_buckets(order_row(order), buckets, contract)
+        simulation = simulate_buckets(order, buckets, contract)
         rows[block_id] = {
             "profit": simulation["actual_profit_gp"],
             "capital_hours": simulation["capital_hours"],
@@ -307,23 +314,21 @@ def replay_vector(order: dict, item: dict, contract: dict) -> dict:
         target_capacities.add(simulation["target_capacity"])
 
     history = list(item.get("history", {}).get(lane["timestep"], []))
-    touched = [
-        int(bucket.get("timestamp") or index * STEP_SECONDS[lane["timestep"]])
-        for index, bucket in enumerate(history)
-        if bucket.get("avgLowPrice")
-        and bucket["avgLowPrice"] <= order["buy_price"]
-        and math.floor(
-            (bucket.get("lowPriceVolume") or 0)
-            * float(lane["participation_rate"])
-        ) > 0
+    touches = [
+        bool(
+            bucket.get("avgLowPrice")
+            and bucket["avgLowPrice"] <= order["buy_price"]
+            and math.floor(
+                (bucket.get("lowPriceVolume") or 0)
+                * float(lane["participation_rate"])
+            ) > 0
+        )
+        for bucket in history
     ]
-    separation = order["hard_exit_after"]
-    episodes = 0
-    episode_start = None
-    for timestamp in touched:
-        if episode_start is None or timestamp - episode_start >= separation:
-            episodes += 1
-            episode_start = timestamp
+    episodes = sum(
+        touched and (index == 0 or not touches[index - 1])
+        for index, touched in enumerate(touches)
+    )
     return {
         "blocks": rows,
         "evidence_count": len(rows),
@@ -333,31 +338,33 @@ def replay_vector(order: dict, item: dict, contract: dict) -> dict:
     }
 
 
-def quantity_breakpoints(order: dict, vector: dict, item: dict, cash: int,
+def quantity_breakpoints(order: dict, vector: dict, item: dict,
+                         available_cash: int, risk_bankroll: int,
                          contract: dict, replay_cache: dict | None = None) -> list[dict]:
-    """Return reviewed piecewise-change candidates plus both integer neighbors."""
+    """Return calculated quantity crossings and their integer neighbors."""
     pivots: dict[int, set[str]] = {}
 
-    def add(value: int | float, source: str) -> None:
-        quantity = int(value)
+    def add(quantity: int, source: str) -> None:
         if quantity > 0:
             pivots.setdefault(quantity, set()).add(source)
 
     add(1, "minimum_integer")
     for quantity in order.get("observed_quantities", [order["quantity"]]):
-        add(quantity, "planner_quantity")
+        add(quantity, "current_quantity")
     for capacity in vector["entry_capacities"]:
         add(capacity, "fill_capacity")
     for capacity in vector["target_capacities"]:
-        add(capacity, "target_capacity")
+        add(max(1, capacity), "target_capacity")
     for entry in vector["entry_capacities"]:
         for target in vector["target_capacities"]:
-            add(entry - target, "forced_exit_capacity")
+            if entry > target:
+                add(max(1, target), "forced_exit_crossing")
 
     ge_limit = int(item.get("limit") or 10**9)
-    affordable = cash // order["buy_price"] if order["buy_price"] else 0
+    affordable = available_cash // order["buy_price"] if order["buy_price"] else 0
     add(ge_limit, "ge_limit")
     add(affordable, "affordability")
+    upper = min(ge_limit, affordable)
 
     def replay(candidate: dict) -> dict:
         key = order_signature(candidate)
@@ -367,55 +374,69 @@ def quantity_breakpoints(order: dict, vector: dict, item: dict, cash: int,
             return replay_cache[key]
         return replay_vector(candidate, item, contract)
 
-    one = {**order, "quantity": 1}
-    one_vector = replay(one)
-    losses = [max(0, -row["profit"]) for row in one_vector["blocks"].values()]
-    worst_unit_loss = max(losses, default=0)
-    if worst_unit_loss:
-        add(
-            cash * contract["maximum_position_loss_pct"] / worst_unit_loss,
-            "position_loss_crossing",
-        )
-        add(
-            cash * contract["maximum_portfolio_loss_pct"] / worst_unit_loss,
-            "portfolio_loss_crossing",
+    def stats(quantity: int) -> tuple[Fraction, int]:
+        rows = replay({**order, "quantity": quantity})["blocks"].values()
+        return (
+            sum((row["utility"] for row in rows), Fraction()),
+            max((max(0, -row["profit"]) for row in rows), default=0),
         )
 
-    utilities = [row["utility"] for row in one_vector["blocks"].values()]
-    if utilities and sum(utilities) == 0:
-        add(1, "profit_zero_crossing")
-    reservation = (
-        Fraction(order["buy_price"] * order["cancel_after"], 3_600)
-        * Fraction(str(contract["minimum_expected_return_per_posted_capital_hour"]))
-    )
-    if reservation:
-        add(Fraction(1, 2) / reservation, "reservation_rounding")
+    if upper > 0:
+        structural = sorted({
+            1, upper,
+            *(min(upper, max(1, value)) for value in pivots),
+        })
+        for left, right in zip(structural, structural[1:]):
+            left_utility = stats(left)[0]
+            right_utility = stats(right)[0]
+            if left_utility == 0:
+                add(left, "utility_zero_crossing")
+            if right_utility == 0:
+                add(right, "utility_zero_crossing")
+            if left_utility * right_utility < 0:
+                negative = left_utility < 0
+                low, high = left, right
+                while low + 1 < high:
+                    middle = (low + high) // 2
+                    if (stats(middle)[0] < 0) == negative:
+                        low = middle
+                    else:
+                        high = middle
+                add(high, "utility_zero_crossing")
 
-    profit_points = sorted(pivots)
-    prior_profit = None
-    for quantity in profit_points:
-        candidate = {**order, "quantity": quantity}
-        profits = [
-            row["profit"]
-            for row in replay(candidate)["blocks"].values()
-        ]
-        total_profit = sum(profits)
-        if prior_profit is not None and (prior_profit <= 0 < total_profit
-                                         or prior_profit >= 0 > total_profit):
-            pivots[quantity].add("profit_zero_crossing")
-        prior_profit = total_profit
+        for limit_key, source in (
+            ("maximum_position_loss_pct", "position_loss_crossing"),
+            ("maximum_portfolio_loss_pct", "lane_local_portfolio_loss_crossing"),
+        ):
+            limit = Fraction(str(contract[limit_key])) * risk_bankroll
+            if stats(upper)[1] > limit:
+                low, high = 0, upper
+                while low + 1 < high:
+                    middle = (low + high) // 2
+                    if stats(middle)[1] > limit:
+                        high = middle
+                    else:
+                        low = middle
+                add(high, source)
 
-    expanded: dict[int, set[str]] = {}
-    upper = min(ge_limit, affordable)
+    expanded: dict[int, dict[str, set[str]]] = {}
     for pivot, sources in pivots.items():
         for quantity in (pivot - 1, pivot, pivot + 1):
-            if 0 < quantity <= upper:
-                expanded.setdefault(quantity, set()).update(sources)
-                if quantity != pivot:
-                    expanded[quantity].add("integer_neighbor")
+            if quantity <= 0:
+                continue
+            row = expanded.setdefault(quantity, {"crossings": set(), "neighbor_of": set()})
+            if quantity == pivot:
+                row["crossings"].update(sources)
+            else:
+                row["neighbor_of"].update(sources)
     return [
-        {"quantity": quantity, "sources": sorted(sources)}
-        for quantity, sources in sorted(expanded.items())
+        {
+            "quantity": quantity,
+            "crossings": sorted(values["crossings"]),
+            "neighbor_of": sorted(values["neighbor_of"]),
+            "feasible": quantity <= upper,
+        }
+        for quantity, values in sorted(expanded.items())
     ]
 
 
@@ -440,7 +461,7 @@ def _portfolio_vector(orders: list[dict], vectors: dict[tuple, dict]) -> dict:
     }
 
 
-def _metrics(current: list[dict], alternative: list[dict],
+def _metrics(current: list[dict], alternative: list[dict], changed: list[dict],
              vectors: dict[tuple, dict], cash: int, contract: dict) -> dict:
     current_rows = _portfolio_vector(current, vectors)
     alternative_rows = _portfolio_vector(alternative, vectors)
@@ -457,33 +478,64 @@ def _metrics(current: list[dict], alternative: list[dict],
     for order in alternative:
         rows = vectors[order_signature(order)]["blocks"].values()
         position_losses.extend(max(0, -row["profit"]) for row in rows)
-    episodes = max(
-        (vectors[order_signature(order)]["opportunity_episode_count"]
-         for order in alternative),
+    changed_evidence = [{
+        "item_id": order["item_id"],
+        "lane": order["lane"],
+        "quantity": order["quantity"],
+        "non_overlapping_block_count":
+            vectors[order_signature(order)]["evidence_count"],
+        "distinct_opportunity_episode_count":
+            vectors[order_signature(order)]["opportunity_episode_count"],
+    } for order in changed]
+    blocks = min(
+        (row["non_overlapping_block_count"] for row in changed_evidence),
+        default=0,
+    )
+    episodes = min(
+        (row["distinct_opportunity_episode_count"] for row in changed_evidence),
         default=0,
     )
     mean_delta = _round_fraction(sum(deltas, Fraction()) / len(deltas)) if deltas else 0
+    position_risk = (
+        max(position_losses, default=0)
+        <= cash * contract["maximum_position_loss_pct"]
+    )
+    lane_risk = (
+        max((max(0, -value) for value in profits), default=0)
+        <= cash * contract["maximum_portfolio_loss_pct"]
+    )
+    positive_mean = bool(deltas) and mean_delta > 0
+    provisional_evidence = blocks >= 3 and episodes >= 2
     return {
         "mean_incremental_visible_utility_gp": mean_delta,
-        "non_overlapping_evidence_count": len(common),
-        "distinct_opportunity_episode_count": episodes,
-        "visible_worst_loss_gp": min(0, min(profits, default=0)),
-        "maximum_position_loss_gp": max(position_losses, default=0),
-        "maximum_portfolio_loss_gp": max((max(0, -value) for value in profits), default=0),
-        "position_risk_ok": max(position_losses, default=0)
-        <= cash * contract["maximum_position_loss_pct"],
-        "portfolio_risk_ok": max((max(0, -value) for value in profits), default=0)
-        <= cash * contract["maximum_portfolio_loss_pct"],
-        "all_window_dominance": bool(deltas) and all(delta >= 0 for delta in deltas),
-        "raw_positive_mean_qualification": bool(deltas) and mean_delta > 0,
-        "evidence_qualified": len(common) >= 3 and episodes >= 2,
-}
+        "comparable_replay_block_count": len(common),
+        "changed_action_non_overlapping_block_count": blocks,
+        "changed_action_distinct_opportunity_episode_count": episodes,
+        "changed_action_evidence": changed_evidence,
+        "lane_local_visible_worst_loss_gp": min(0, min(profits, default=0)),
+        "lane_local_maximum_position_loss_gp": max(position_losses, default=0),
+        "lane_local_maximum_portfolio_loss_gp":
+            max((max(0, -value) for value in profits), default=0),
+        "lane_local_position_risk_compliant": position_risk,
+        "lane_local_portfolio_risk_compliant": lane_risk,
+        "full_portfolio_risk_assessed": False,
+        "all_window_dominance": (
+            bool(deltas)
+            and all(delta >= 0 for delta in deltas)
+            and any(delta > 0 for delta in deltas)
+        ),
+        "raw_positive_mean": positive_mean,
+        "provisional_3_block_2_episode": provisional_evidence,
+        "provisional_positive_mean_evidence_and_lane_risk": (
+            positive_mean and provisional_evidence and position_risk and lane_risk
+        ),
+    }
 
 
 def _withheld_utility(order: dict, outcome: dict, contract: dict) -> Fraction:
     lane = contract["simulation"][order["lane"]]
     buckets = outcome.get("future", {}).get(lane["timestep"], [])
-    simulation = simulate_buckets(order_row(order), buckets, contract)
+    simulation = simulate_buckets(order, buckets, contract)
     return _utility(simulation, contract)
 
 
@@ -497,84 +549,126 @@ def _covered(order: dict, fixture_name: str, as_of: str, coverage: dict[tuple, d
 def _annotate_outcome(record: dict, current: list[dict], alternative: list[dict],
                       fixture_name: str, as_of: str, outcomes: dict[int, dict],
                       coverage: dict[tuple, dict], contract: dict) -> None:
+    current_signatures = {order_signature(order) for order in current}
+    alternative_signatures = {order_signature(order) for order in alternative}
     changed = [
-        order for order in alternative
-        if order_signature(order) not in {order_signature(row) for row in current}
+        ("before", order) for order in current
+        if order_signature(order) not in alternative_signatures
+    ] + [
+        ("after", order) for order in alternative
+        if order_signature(order) not in current_signatures
     ]
-    scoring_cells = []
-    for order in changed:
+    cells = []
+    for role, order in changed:
         covered = _covered(order, fixture_name, as_of, coverage)
-        utility = (
-            _round_fraction(_withheld_utility(
+        utility = None
+        if covered:
+            utility = _round_fraction(_withheld_utility(
                 order, outcomes[order["item_id"]], contract
             ))
-            if covered else None
-        )
-        scoring_cells.append({
+        cells.append({
+            "role": role,
             "item_id": order["item_id"],
             "lane": order["lane"],
+            "quantity": order["quantity"],
             "covered": covered,
             "withheld_utility_gp": utility,
-            "performance_credit_gp": max(0, utility) if utility is not None else 0,
         })
-    record["withheld_scoring_cells"] = scoring_cells
-    changed_covered = bool(changed) and all(row["covered"] for row in scoring_cells)
-    record["withheld_coverage"] = changed_covered
-    if not changed_covered:
-        record["withheld_incremental_utility_gp"] = None
-        record["withheld_performance_credit_gp"] = sum(
-            row["performance_credit_gp"] for row in scoring_cells
-        )
-        return
-    current_value = sum(
-        (_withheld_utility(order, outcomes[order["item_id"]], contract)
-         for order in current
-         if _covered(order, fixture_name, as_of, coverage)),
-        Fraction(),
+    record["changed_action_coverage"] = cells
+    record["withheld_outcome_status"] = (
+        "covered" if cells and all(row["covered"] for row in cells) else "uncovered"
     )
-    alternative_value = sum(
-        (_withheld_utility(order, outcomes[order["item_id"]], contract)
-         for order in alternative
-         if _covered(order, fixture_name, as_of, coverage)),
-        Fraction(),
+    record["raw_covered_outcome_delta_gp"] = (
+        sum(row["withheld_utility_gp"] for row in cells if row["role"] == "after")
+        - sum(row["withheld_utility_gp"] for row in cells if row["role"] == "before")
+        if record["withheld_outcome_status"] == "covered" else None
     )
-    delta = _round_fraction(alternative_value - current_value)
-    record["withheld_incremental_utility_gp"] = delta
-    record["withheld_performance_credit_gp"] = max(0, delta)
 
 
 def _candidate(order: dict, quantity: int) -> dict:
     return {**order, "quantity": quantity}
 
 
+def portfolio_feasibility(orders: list[dict], case: dict,
+                          item_map: dict[int, dict]) -> dict:
+    capital = sum(order["quantity"] * order["buy_price"] for order in orders)
+    reasons = []
+    if capital > case["cash_gp"]:
+        reasons.append("cash")
+    if len(orders) > case["slot_cap"]:
+        reasons.append("slots")
+    item_ids = [order["item_id"] for order in orders]
+    if len(item_ids) != len(set(item_ids)):
+        reasons.append("duplicate_item")
+    if case["away_hours"] is not None and case["away_hours"] >= 0.5:
+        if any(order["lane"] == "active-margin" for order in orders):
+            reasons.append("attendance")
+    for order in orders:
+        item = item_map[order["item_id"]]
+        if (
+            order["side"] != "buy"
+            or order["quantity"] <= 0
+            or order["quantity"] > int(item.get("limit") or 10**9)
+        ):
+            reasons.append("order_constraint")
+            break
+    return {
+        "feasible": not reasons,
+        "reasons": reasons,
+        "capital_gp": capital,
+        "slots": len(orders),
+    }
+
+
+def _best_quantity(action: dict, vector: dict, item: dict,
+                   available_cash: int, risk_bankroll: int,
+                   contract: dict, vectors: dict) -> tuple[dict, dict] | None:
+    points = [
+        point for point in quantity_breakpoints(
+            action, vector, item, available_cash, risk_bankroll, contract, vectors
+        )
+        if point["feasible"]
+    ]
+    choices = []
+    for point in points:
+        candidate = _candidate(action, point["quantity"])
+        key = order_signature(candidate)
+        if key not in vectors:
+            vectors[key] = replay_vector(candidate, item, contract)
+        rows = vectors[key]["blocks"].values()
+        score = (
+            sum((row["utility"] for row in rows), Fraction()) / len(rows)
+            if rows else Fraction()
+        )
+        choices.append((
+            score,
+            -candidate["quantity"] * candidate["buy_price"],
+            -candidate["quantity"],
+            -candidate["item_id"],
+            candidate,
+            point,
+        ))
+    if not choices:
+        return None
+    best = max(choices)
+    return best[-2], best[-1]
+
+
 def _bounded_benchmark(actions: list[dict], vectors: dict[tuple, dict],
                        item_map: dict[int, dict], cash: int, slots: int,
+                       excluded_items: set[int], risk_bankroll: int,
                        contract: dict) -> list[dict]:
     """Exact sparse knapsack over one best visible quantity per bounded action."""
     candidates = []
     for action in actions:
-        points = quantity_breakpoints(
-            action, vectors[order_signature(action)],
-            item_map[action["item_id"]], cash, contract, vectors,
-        )
-        choices = [_candidate(action, point["quantity"]) for point in points]
-        choices = [choice for choice in choices if choice["quantity"] * choice["buy_price"] <= cash]
-        if not choices:
+        if action["item_id"] in excluded_items:
             continue
-        for choice in choices:
-            if order_signature(choice) not in vectors:
-                vectors[order_signature(choice)] = replay_vector(
-                    choice, item_map[choice["item_id"]], contract
-                )
-        best = max(
-            choices,
-            key=lambda choice: (
-                sum((row["utility"] for row in
-                     vectors[order_signature(choice)]["blocks"].values()), Fraction()),
-                -choice["quantity"] * choice["buy_price"],
-            ),
+        selected = _best_quantity(
+            action, vectors[order_signature(action)],
+            item_map[action["item_id"]], cash, risk_bankroll, contract, vectors,
         )
-        candidates.append(best)
+        if selected:
+            candidates.append(selected[0])
 
     states: list[dict[tuple[int, frozenset], tuple[Fraction, list[dict]]]] = [
         {(0, frozenset()): (Fraction(), [])}
@@ -585,7 +679,7 @@ def _bounded_benchmark(actions: list[dict], vectors: dict[tuple, dict],
             (row["utility"] for row in
              vectors[order_signature(candidate)]["blocks"].values()),
             Fraction(),
-        )
+        ) / max(1, vectors[order_signature(candidate)]["evidence_count"])
         item_id = candidate["item_id"]
         for used in range(slots - 1, -1, -1):
             for (spent, item_ids), (score, orders) in list(states[used].items()):
@@ -619,10 +713,15 @@ def visible_challengers(case: dict, frontier: list[dict], visible: dict,
 
     records = []
 
-    def record(kind: str, lane: str, alternative: list[dict], details: dict | None = None) -> None:
-        if any(order["lane"] != lane for order in alternative):
+    def record(kind: str, lane: str, full_alternative: list[dict],
+               details: dict | None = None) -> None:
+        feasibility = portfolio_feasibility(full_alternative, case, item_map)
+        if not feasibility["feasible"]:
             return
         lane_current = [order for order in current if order["lane"] == lane]
+        alternative = [
+            order for order in full_alternative if order["lane"] == lane
+        ]
         if (
             sorted(order_signature(order) for order in lane_current)
             == sorted(order_signature(order) for order in alternative)
@@ -630,15 +729,22 @@ def visible_challengers(case: dict, frontier: list[dict], visible: dict,
             return
         for order in alternative:
             ensure(order)
+        current_signatures = {order_signature(order) for order in lane_current}
+        changed = [
+            order for order in alternative
+            if order_signature(order) not in current_signatures
+        ]
         row = {
             "kind": kind,
             "lane": lane,
+            "portfolio_feasibility": feasibility,
             "_current_orders": lane_current,
             "_alternative_orders": alternative,
             **(details or {}),
             **_metrics(
                 lane_current,
                 alternative,
+                changed,
                 vectors,
                 case["cash_gp"],
                 contract,
@@ -650,6 +756,7 @@ def visible_challengers(case: dict, frontier: list[dict], visible: dict,
         lane_current = [order for order in current if order["lane"] == lane_name]
         lane_actions = [order for order in frontier if order["lane"] == lane_name]
         spent = sum(order["quantity"] * order["buy_price"] for order in current)
+        fixed = [order for order in current if order["lane"] != lane_name]
 
         if len(current) < case["slot_cap"]:
             current_items = {order["item_id"] for order in current}
@@ -657,17 +764,24 @@ def visible_challengers(case: dict, frontier: list[dict], visible: dict,
                 if action["item_id"] in current_items:
                     continue
                 available = case["cash_gp"] - spent
-                points = quantity_breakpoints(
+                selected = _best_quantity(
                     action, vectors[order_signature(action)],
-                    item_map[action["item_id"]], available, contract, vectors,
+                    item_map[action["item_id"]],
+                    available,
+                    case["cash_gp"],
+                    contract,
+                    vectors,
                 )
-                if points:
-                    addition = _candidate(action, points[-1]["quantity"])
-                    record("one_order_addition", lane_name, lane_current + [addition], {
+                if selected:
+                    addition, point = selected
+                    record("one_order_addition", lane_name, current + [addition], {
                         "item_id": addition["item_id"], "quantity": addition["quantity"],
+                        "quantity_policy":
+                            "max_visible_mean_utility_then_lowest_cost",
+                        "selected_breakpoint": point,
                     })
 
-        for index, order in enumerate(lane_current):
+        for order in lane_current:
             available = case["cash_gp"] - spent + order["quantity"] * order["buy_price"]
             base_action = next(
                 (action for action in lane_actions
@@ -676,20 +790,29 @@ def visible_challengers(case: dict, frontier: list[dict], visible: dict,
             )
             points = quantity_breakpoints(
                 base_action, vectors[order_signature(base_action)],
-                item_map[order["item_id"]], available, contract, vectors,
+                item_map[order["item_id"]],
+                available,
+                case["cash_gp"],
+                contract,
+                vectors,
             )
-            next_points = [point for point in points if point["quantity"] > order["quantity"]]
+            next_points = [
+                point for point in points
+                if point["feasible"] and point["quantity"] > order["quantity"]
+            ]
             if next_points:
                 resized = _candidate(order, next_points[0]["quantity"])
-                alternative = lane_current[:index] + [resized] + lane_current[index + 1:]
+                alternative = [
+                    resized if row is order else row for row in current
+                ]
                 record("next_breakpoint_resize", lane_name, alternative, {
                     "item_id": order["item_id"],
                     "from_quantity": order["quantity"],
                     "to_quantity": resized["quantity"],
-                    "breakpoint_sources": next_points[0]["sources"],
+                    "selected_breakpoint": next_points[0],
                 })
 
-        for index, removed in enumerate(lane_current):
+        for removed in lane_current:
             available = (
                 case["cash_gp"] - spent
                 + removed["quantity"] * removed["buy_price"]
@@ -699,20 +822,27 @@ def visible_challengers(case: dict, frontier: list[dict], visible: dict,
                     continue
                 if action_signature(action) == action_signature(removed):
                     continue
-                points = quantity_breakpoints(
+                selected = _best_quantity(
                     action, vectors[order_signature(action)],
-                    item_map[action["item_id"]], available, contract, vectors,
+                    item_map[action["item_id"]],
+                    available,
+                    case["cash_gp"],
+                    contract,
+                    vectors,
                 )
-                if not points:
+                if not selected:
                     continue
-                replacement = _candidate(action, points[-1]["quantity"])
-                alternative = (
-                    lane_current[:index] + [replacement] + lane_current[index + 1:]
-                )
+                replacement, point = selected
+                alternative = [
+                    replacement if row is removed else row for row in current
+                ]
                 record("one_for_one_replacement", lane_name, alternative, {
                     "removed_item_id": removed["item_id"],
                     "added_item_id": replacement["item_id"],
                     "quantity": replacement["quantity"],
+                    "quantity_policy":
+                        "max_visible_mean_utility_then_lowest_cost",
+                    "selected_breakpoint": point,
                 })
 
         if prior_case:
@@ -730,18 +860,27 @@ def visible_challengers(case: dict, frontier: list[dict], visible: dict,
                     case["cash_gp"] // order["buy_price"],
                 )
                 scaled.append(_candidate(order, quantity))
-            if scaled and sum(
-                order["quantity"] * order["buy_price"] for order in scaled
-            ) <= case["cash_gp"]:
-                record("adjacent_bankroll_scaling", lane_name, scaled, {
+            if scaled:
+                record("adjacent_bankroll_scaling", lane_name, fixed + scaled, {
                     "lower_cash_gp": prior_case["cash_gp"],
                 })
 
+        fixed_cash = sum(order["quantity"] * order["buy_price"] for order in fixed)
+        available_slots = case["slot_cap"] - len(fixed)
         benchmark = _bounded_benchmark(
-            lane_actions, vectors, item_map, case["cash_gp"], case["slot_cap"], contract
+            lane_actions,
+            vectors,
+            item_map,
+            case["cash_gp"] - fixed_cash,
+            available_slots,
+            {order["item_id"] for order in fixed},
+            case["cash_gp"],
+            contract,
         )
-        record("bounded_benchmark", lane_name, benchmark, {
+        record("bounded_benchmark", lane_name, fixed + benchmark, {
             "frontier_actions": len(lane_actions),
+            "available_cash_gp": case["cash_gp"] - fixed_cash,
+            "available_slots": available_slots,
         })
 
     return records
@@ -766,16 +905,7 @@ def analyze_case(case: dict, frontier: list[dict], visible: dict,
             row, current, alternative, case["fixture"], visible["as_of"],
             outcomes, coverage, contract,
         )
-    counts = {}
-    for row in records:
-        key = f"{row['lane']}:{row['kind']}"
-        counts[key] = counts.get(key, 0) + 1
-    return {
-        "acceptance_gate": False,
-        "cross_lane_aggregation": "unresolved; results remain lane-separated",
-        "challengers": records,
-        "counts": counts,
-    }
+    return {"challengers": records}
 
 
 def summarize(cases: list[dict], frontiers: dict[str, list[dict]]) -> dict:
@@ -785,7 +915,7 @@ def summarize(cases: list[dict], frontiers: dict[str, list[dict]]) -> dict:
         for row in case["selection_characterization"]["challengers"]
     ]
     by_lane_fixture: dict[str, dict] = {}
-    unchanged_with_qualifying = 0
+    unchanged_with_provisional_conjunction = 0
     groups: dict[tuple, list[dict]] = {}
     for case in cases:
         key = (case["fixture"], case["attendance"], case["slot_cap"])
@@ -797,14 +927,23 @@ def summarize(cases: list[dict], frontiers: dict[str, list[dict]]) -> dict:
                 {
                     "challengers": 0,
                     "all_window": 0,
-                    "positive_mean": 0,
-                    "evidence_qualified": 0,
+                    "raw_positive_mean": 0,
+                    "provisional_3_block_2_episode": 0,
+                    "lane_local_position_risk_compliant": 0,
+                    "lane_local_portfolio_risk_compliant": 0,
+                    "provisional_positive_mean_evidence_and_lane_risk": 0,
                 },
             )
             cell["challengers"] += 1
             cell["all_window"] += row["all_window_dominance"]
-            cell["positive_mean"] += row["raw_positive_mean_qualification"]
-            cell["evidence_qualified"] += row["evidence_qualified"]
+            for metric in (
+                "raw_positive_mean",
+                "provisional_3_block_2_episode",
+                "lane_local_position_risk_compliant",
+                "lane_local_portfolio_risk_compliant",
+                "provisional_positive_mean_evidence_and_lane_risk",
+            ):
+                cell[metric] += row[metric]
 
     flat_groups = 0
     for rows in groups.values():
@@ -814,8 +953,7 @@ def summarize(cases: list[dict], frontiers: dict[str, list[dict]]) -> dict:
             for row in ordered
         ]
         if len(ordered) == 6 and len(set(signatures)) == 1 and any(
-            challenger["evidence_qualified"]
-            and challenger["raw_positive_mean_qualification"]
+            challenger["provisional_positive_mean_evidence_and_lane_risk"]
             for row in ordered
             for challenger in row["selection_characterization"]["challengers"]
         ):
@@ -825,27 +963,37 @@ def summarize(cases: list[dict], frontiers: dict[str, list[dict]]) -> dict:
                 tuple(sorted(order_signature(order) for order in prior["normalized_orders"]))
                 == tuple(sorted(order_signature(order) for order in current["normalized_orders"]))
                 and any(
-                    challenger["evidence_qualified"]
-                    and challenger["raw_positive_mean_qualification"]
+                    challenger["provisional_positive_mean_evidence_and_lane_risk"]
                     for challenger in current["selection_characterization"]["challengers"]
                 )
             ):
-                unchanged_with_qualifying += 1
+                unchanged_with_provisional_conjunction += 1
     return {
         "acceptance_gate": False,
         "all_window_challenger_count": sum(
             row["all_window_dominance"] for _, row in challengers
         ),
         "raw_positive_mean_challenger_count": sum(
-            row["raw_positive_mean_qualification"] for _, row in challengers
+            row["raw_positive_mean"] for _, row in challengers
         ),
-        "evidence_qualified_challenger_count": sum(
-            row["evidence_qualified"] for _, row in challengers
+        "provisional_3_block_2_episode_challenger_count": sum(
+            row["provisional_3_block_2_episode"] for _, row in challengers
+        ),
+        "lane_local_position_risk_compliant_challenger_count": sum(
+            row["lane_local_position_risk_compliant"] for _, row in challengers
+        ),
+        "lane_local_portfolio_risk_compliant_challenger_count": sum(
+            row["lane_local_portfolio_risk_compliant"] for _, row in challengers
+        ),
+        "provisional_positive_mean_evidence_and_lane_risk_challenger_count": sum(
+            row["provisional_positive_mean_evidence_and_lane_risk"]
+            for _, row in challengers
         ),
         "counts_by_lane_and_fixture": by_lane_fixture,
-        "unchanged_bankroll_transitions_with_qualifying_challengers":
-            unchanged_with_qualifying,
-        "flat_six_bankroll_groups_with_qualifying_challengers": flat_groups,
+        "unchanged_bankroll_transitions_with_provisional_positive_mean_"
+        "evidence_and_lane_risk": unchanged_with_provisional_conjunction,
+        "flat_six_bankroll_groups_with_provisional_positive_mean_"
+        "evidence_and_lane_risk": flat_groups,
         "frontier_cardinalities": {
             fixture: len(frontier) for fixture, frontier in frontiers.items()
         },

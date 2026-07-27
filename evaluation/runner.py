@@ -25,7 +25,12 @@ DEFAULT_FIXTURES = (
     ROOT / "fixtures/real_market.json.gz",
     ROOT / "fixtures/real_market_2026-07-26.json.gz",
 )
-PLAN_SECTIONS = ("buys", "patient_probes", "active_buys", "time_buys")
+PLAN_SECTIONS = {
+    "buys": "patient",
+    "patient_probes": "patient-probe",
+    "active_buys": "active-margin",
+    "time_buys": "time-of-day",
+}
 
 
 class FrozenDateTime(datetime):
@@ -136,20 +141,20 @@ def _run_plan(fixture: dict, cash: int, attendance: dict, slot_cap: int,
         )
 
 
-def _strategy(row: dict) -> str:
-    return selection_contract.strategy(row)
-
-
-def _simulate_order(row: dict, item: dict, contract: dict) -> dict:
-    lane = contract["simulation"][_strategy(row)]
+def _simulate_order(order: dict, item: dict, contract: dict) -> dict:
+    lane = contract["simulation"][order["lane"]]
     future = list(item.get("future", {}).get(lane["timestep"], []))
-    result = selection_contract.simulate_buckets(row, future, contract)
+    result = selection_contract.simulate_buckets(order, future, contract)
     result["capital_hours"] = float(result["capital_hours"])
     return result
 
 
 def _orders(plan_result: dict) -> list[dict]:
-    return [row for section in PLAN_SECTIONS for row in plan_result.get(section, [])]
+    return [
+        {**row, "_evaluator_lane": lane}
+        for section, lane in PLAN_SECTIONS.items()
+        for row in plan_result.get(section, [])
+    ]
 
 
 def _case_violations(case: dict, contract: dict) -> list[dict]:
@@ -248,13 +253,16 @@ def evaluate(contract_path: Path = DEFAULT_CONTRACT,
                         visible, cash, attendance, slot_cap, contract["strategies"])
                     planner_orders = _orders(result)
                     normalized = [
-                        selection_contract.normalize_order(row, contract)
+                        {
+                            **selection_contract.normalize_order(row, contract),
+                            "name": item_map[int(row["id"])]["name"],
+                        }
                         for row in planner_orders
                     ]
                     simulations = []
-                    for row, order in zip(planner_orders, normalized):
+                    for order in normalized:
                         simulation = _simulate_order(
-                            row, item_map[int(row["id"])], contract
+                            order, item_map[order["item_id"]], contract
                         )
                         simulation["executable_order"] = (
                             selection_contract.executable_order(order)
@@ -393,6 +401,8 @@ def evaluate(contract_path: Path = DEFAULT_CONTRACT,
                 "top eight current-quote actions per fixture/lane by visible replay utility",
             "frontier_is_globally_optimal": False,
             "coverage_manifest": coverage_rows,
+            "coverage_manifest_sha256":
+                selection_contract.coverage_manifest_sha256(coverage_rows),
             "characterization": selection_summary,
             "uncertainty_calibration": selection_contract.uncertainty_report(
                 list(visible_fixtures.values()), contract
