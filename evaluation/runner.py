@@ -6,15 +6,16 @@ import argparse
 import gzip
 import hashlib
 import json
-import math
 import subprocess
+import time
 from contextlib import ExitStack
 from datetime import datetime, timezone
 from pathlib import Path
 from statistics import mean, median
 from unittest.mock import patch
 
-from flipper import ge_tax, plan, prices, signals
+from evaluation import selection_contract
+from flipper import plan, prices, signals
 
 
 ROOT = Path(__file__).resolve().parent
@@ -25,7 +26,6 @@ DEFAULT_FIXTURES = (
     ROOT / "fixtures/real_market_2026-07-26.json.gz",
 )
 PLAN_SECTIONS = ("buys", "patient_probes", "active_buys", "time_buys")
-STEP_SECONDS = {"5m": 300, "1h": 3_600, "6h": 21_600}
 
 
 class FrozenDateTime(datetime):
@@ -103,6 +103,7 @@ def _market_maps(fixture: dict) -> tuple[dict, dict, dict, dict]:
 
 def _run_plan(fixture: dict, cash: int, attendance: dict, slot_cap: int,
               strategies: str) -> dict:
+    fixture = selection_contract.visible_fixture(fixture)
     items, mapping, latest, one_hour = _market_maps(fixture)
     FrozenDateTime.instant = datetime.fromisoformat(fixture["as_of"].replace("Z", "+00:00"))
 
@@ -136,87 +137,15 @@ def _run_plan(fixture: dict, cash: int, attendance: dict, slot_cap: int,
 
 
 def _strategy(row: dict) -> str:
-    strategy = row.get("strategy")
-    if strategy == "patient-band":
-        return "patient"
-    return strategy or {
-        "flip": "patient",
-        "flip-patient-probe": "patient-probe",
-        "flip-active": "active-margin",
-        "flip-time-of-day": "time-of-day",
-    }.get(row.get("bucket"), "patient")
-
-
-def _non_null_price(rows: list[dict], key: str, fallback: int) -> int:
-    return next((int(row[key]) for row in reversed(rows) if row.get(key)), fallback)
+    return selection_contract.strategy(row)
 
 
 def _simulate_order(row: dict, item: dict, contract: dict) -> dict:
-    strategy = _strategy(row)
-    lane = contract["simulation"][strategy]
-    timestep = lane["timestep"]
-    future = list(item.get("future", {}).get(timestep, []))
-    step_hours = STEP_SECONDS[timestep] / 3_600
-    entry_points = max(1, math.ceil(lane["entry_hours"] / step_hours))
-    hold_points = max(1, math.ceil(lane["hold_hours"] / step_hours))
-    qty = int(row["qty"])
-    buy = int(row["price"])
-    target = int(row["sell_target"])
-    participation = lane["participation_rate"]
-
-    entry_rows = future[:entry_points]
-    entry_touches = [
-        (index, bucket)
-        for index, bucket in enumerate(entry_rows)
-        if bucket.get("avgLowPrice") and bucket["avgLowPrice"] <= buy
-    ]
-    entry_capacity = sum(
-        max(0, math.floor((bucket.get("lowPriceVolume") or 0) * participation))
-        for _, bucket in entry_touches
-    )
-    filled = min(qty, entry_capacity)
-    posted_capital = qty * buy
-    expected_profit = int(row.get("expected_profit") or 0)
-    if not filled:
-        return {
-            "id": row["id"], "name": row["name"], "strategy": strategy,
-            "posted_capital_gp": posted_capital, "expected_profit_gp": expected_profit,
-            "filled_qty": 0, "target_sold_qty": 0, "forced_exit_qty": 0,
-            "actual_profit_gp": 0,
-            "capital_hours": posted_capital * lane["entry_hours"],
-            "fill_rate": 0.0,
-        }
-
-    entry_index = entry_touches[0][0]
-    exit_rows = future[entry_index + 1: entry_index + 1 + hold_points]
-    target_rows = [
-        bucket for bucket in exit_rows
-        if bucket.get("avgHighPrice") and bucket["avgHighPrice"] >= target
-    ]
-    target_capacity = sum(
-        max(0, math.floor((bucket.get("highPriceVolume") or 0) * participation))
-        for bucket in target_rows
-    )
-    target_sold = min(filled, target_capacity)
-    forced = filled - target_sold
-    forced_price = _non_null_price(exit_rows, "avgLowPrice", buy)
-    target_profit = target_sold * (target - buy - ge_tax.sale_tax(target))
-    forced_profit = forced * (forced_price - buy - ge_tax.sale_tax(forced_price))
-    actual_profit = target_profit + forced_profit
-    filled_hours = lane["hold_hours"] if forced else max(step_hours, step_hours * len(exit_rows))
-    unfilled = qty - filled
-    capital_hours = (
-        filled * buy * filled_hours
-        + unfilled * buy * lane["entry_hours"]
-    )
-    return {
-        "id": row["id"], "name": row["name"], "strategy": strategy,
-        "posted_capital_gp": posted_capital, "expected_profit_gp": expected_profit,
-        "filled_qty": filled, "target_sold_qty": target_sold, "forced_exit_qty": forced,
-        "actual_profit_gp": actual_profit, "forced_exit_price": forced_price if forced else None,
-        "capital_hours": capital_hours,
-        "fill_rate": round(filled / qty, 4) if qty else 0.0,
-    }
+    lane = contract["simulation"][_strategy(row)]
+    future = list(item.get("future", {}).get(lane["timestep"], []))
+    result = selection_contract.simulate_buckets(row, future, contract)
+    result["capital_hours"] = float(result["capital_hours"])
+    return result
 
 
 def _orders(plan_result: dict) -> list[dict]:
@@ -291,21 +220,48 @@ def _dominance_violations(cases: list[dict], contract: dict) -> list[dict]:
 
 def evaluate(contract_path: Path = DEFAULT_CONTRACT,
              fixture_paths: list[Path] | None = None) -> dict:
+    started = time.perf_counter()
     contract = _read_json(contract_path)
     paths = fixture_paths or list(DEFAULT_FIXTURES)
     fixtures = load_fixtures(paths)
+    visible_fixtures = {
+        fixture["name"]: selection_contract.visible_fixture(fixture)
+        for fixture in fixtures
+    }
+    outcomes = {
+        fixture["name"]: selection_contract.withheld_items(fixture)
+        for fixture in fixtures
+    }
+    coverage_rows = [
+        row
+        for fixture in fixtures
+        for row in selection_contract.coverage_manifest(fixture, contract)
+    ]
     cases = []
+    planned_by_fixture: dict[str, list[dict]] = {}
     for fixture in fixtures:
+        visible = visible_fixtures[fixture["name"]]
         item_map = {int(item["id"]): item for item in fixture["items"]}
         for attendance in contract["attendance"]:
             for slot_cap in contract["slot_caps"]:
                 for cash in contract["bankrolls_gp"]:
                     result = _run_plan(
-                        fixture, cash, attendance, slot_cap, contract["strategies"])
-                    simulations = [
-                        _simulate_order(row, item_map[int(row["id"])], contract)
-                        for row in _orders(result)
+                        visible, cash, attendance, slot_cap, contract["strategies"])
+                    planner_orders = _orders(result)
+                    planned_by_fixture.setdefault(fixture["name"], []).extend(planner_orders)
+                    normalized = [
+                        selection_contract.normalize_order(row, contract)
+                        for row in planner_orders
                     ]
+                    simulations = []
+                    for row, order in zip(planner_orders, normalized):
+                        simulation = _simulate_order(
+                            row, item_map[int(row["id"])], contract
+                        )
+                        simulation["executable_order"] = (
+                            selection_contract.executable_order(order)
+                        )
+                        simulations.append(simulation)
                     expected_profit = sum(row["expected_profit_gp"] for row in simulations)
                     actual_profit = sum(row["actual_profit_gp"] for row in simulations)
                     capital_hours = sum(row["capital_hours"] for row in simulations)
@@ -316,6 +272,7 @@ def evaluate(contract_path: Path = DEFAULT_CONTRACT,
                         "slot_cap": slot_cap, "cash_gp": cash,
                         "selected_item_ids": [row["id"] for row in simulations],
                         "selected_items": [row["name"] for row in simulations],
+                        "normalized_orders": normalized,
                         "orders": simulations,
                         "planned_capital_gp": sum(row["posted_capital_gp"] for row in simulations),
                         "expected_profit_gp": expected_profit,
@@ -330,6 +287,34 @@ def evaluate(contract_path: Path = DEFAULT_CONTRACT,
                     case["violations"] = _case_violations(case, contract)
                     cases.append(case)
 
+    frontiers = {
+        fixture["name"]: selection_contract.canonical_frontier(
+            visible_fixtures[fixture["name"]],
+            planned_by_fixture.get(fixture["name"], []),
+            contract,
+        )
+        for fixture in fixtures
+    }
+    selection_groups: dict[tuple, list[dict]] = {}
+    for case in cases:
+        key = (case["fixture"], case["attendance"], case["slot_cap"])
+        selection_groups.setdefault(key, []).append(case)
+    replay_caches = {fixture["name"]: {} for fixture in fixtures}
+    for rows in selection_groups.values():
+        prior = None
+        for case in sorted(rows, key=lambda row: row["cash_gp"]):
+            case["selection_characterization"] = selection_contract.analyze_case(
+                case,
+                frontiers[case["fixture"]],
+                visible_fixtures[case["fixture"]],
+                outcomes[case["fixture"]],
+                coverage_rows,
+                contract,
+                prior_case=prior,
+                replay_cache=replay_caches[case["fixture"]],
+            )
+            prior = case
+
     dominance = _dominance_violations(cases, contract)
     case_violations = [
         {"fixture": case["fixture"], "attendance": case["attendance"],
@@ -343,10 +328,6 @@ def evaluate(contract_path: Path = DEFAULT_CONTRACT,
     })
     selection_transitions = 0
     changed_selections = 0
-    selection_groups = {}
-    for case in cases:
-        key = (case["fixture"], case["attendance"], case["slot_cap"])
-        selection_groups.setdefault(key, []).append(case)
     for rows in selection_groups.values():
         ordered = sorted(rows, key=lambda row: row["cash_gp"])
         for prior, current in zip(ordered, ordered[1:]):
@@ -363,8 +344,10 @@ def evaluate(contract_path: Path = DEFAULT_CONTRACT,
         })
         for fixture in fixtures
     }
+    selection_summary = selection_contract.summarize(cases, frontiers)
+    elapsed = time.perf_counter() - started
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "git_revision": _git_revision(),
         "contract": str(contract_path.relative_to(ROOT.parent)),
@@ -373,6 +356,7 @@ def evaluate(contract_path: Path = DEFAULT_CONTRACT,
         "oracle_sha256": _combined_sha256([
             contract_path,
             Path(__file__),
+            ROOT / "selection_contract.py",
             ROOT / "compare.py",
             ROOT.parent / "tests/test_evaluation.py",
         ]),
@@ -400,6 +384,24 @@ def evaluate(contract_path: Path = DEFAULT_CONTRACT,
             "case_violations": len(case_violations),
             "dominance_violations": len(dominance),
             "hard_invariants_pass": not case_violations and not dominance,
+            "complete_evaluator_runtime_seconds": round(elapsed, 3),
+        },
+        "selection_contract_v2": {
+            "status": "report_only_characterization",
+            "frontier_policy":
+                "deduplicated executable planner emissions per fixture/item/lane",
+            "frontier_is_globally_optimal": False,
+            "coverage_manifest": coverage_rows,
+            "characterization": selection_summary,
+            "uncertainty_calibration": selection_contract.uncertainty_report(
+                list(visible_fixtures.values()), contract
+            ),
+            "tax_contract":
+                "evaluator-v1 per-unit sale_tax retained pending exemption review",
+            "sealed_holdout_boundary":
+                "must be a separately permissioned service or principal whose outcome "
+                "data is inaccessible to the planner agent; another readable directory "
+                "is not sealed",
         },
         "violations": case_violations + dominance,
         "cases": cases,
