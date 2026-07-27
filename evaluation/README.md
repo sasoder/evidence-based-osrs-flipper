@@ -40,3 +40,8 @@ stratified cohort policy described in the specification.
 
 Read [SPEC.md](SPEC.md) before changing planner behavior. Evaluator changes require separate review
 and invalidate all stored baselines.
+
+The first evaluator-v2 selection-contract implementation is report-only. See
+[V2_PHASE1_REPORT.md](V2_PHASE1_REPORT.md) for its scope, adversarial characterization, known tax
+discrepancy, unresolved cross-lane evidence, and required human decisions. It is not an accepted or
+frozen replacement for the v1 contract.
