@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import inspect
 import json
 import unittest
 from fractions import Fraction
@@ -133,6 +134,9 @@ class SelectionContractTests(unittest.TestCase):
                 **visible,
                 "universe": {"selection_coverage": True},
             })
+        parameters = inspect.signature(selection.visible_challengers).parameters
+        self.assertNotIn("outcomes", parameters)
+        self.assertNotIn("coverage_rows", parameters)
 
     def test_planner_execution_receives_only_visible_input_shape(self) -> None:
         fixture = self.fixture([self.item()])

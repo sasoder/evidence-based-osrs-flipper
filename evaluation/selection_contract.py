@@ -579,17 +579,12 @@ def _bounded_benchmark(actions: list[dict], vectors: dict[tuple, dict],
     return max(choices, key=lambda value: value[0], default=(Fraction(), []))[1]
 
 
-def analyze_case(case: dict, frontier: list[dict], visible: dict,
-                 outcomes: dict[int, dict], coverage_rows: list[dict],
-                 contract: dict, prior_case: dict | None = None,
-                 replay_cache: dict | None = None) -> dict:
-    """Characterize local challengers without producing acceptance failures."""
+def visible_challengers(case: dict, frontier: list[dict], visible: dict,
+                        contract: dict, prior_case: dict | None = None,
+                        replay_cache: dict | None = None) -> list[dict]:
+    """Construct local challengers with visible inputs only."""
     assert_visible(visible)
     item_map = {int(item["id"]): item for item in visible["items"]}
-    coverage = {
-        coverage_key(row["fixture"], row["item_id"], row["lane"], row["as_of"]): row
-        for row in coverage_rows
-    }
     current = case["normalized_orders"]
     vectors = replay_cache if replay_cache is not None else {}
 
@@ -606,30 +601,28 @@ def analyze_case(case: dict, frontier: list[dict], visible: dict,
     def record(kind: str, lane: str, alternative: list[dict], details: dict | None = None) -> None:
         if any(order["lane"] != lane for order in alternative):
             return
+        lane_current = [order for order in current if order["lane"] == lane]
+        if (
+            sorted(order_signature(order) for order in lane_current)
+            == sorted(order_signature(order) for order in alternative)
+        ):
+            return
         for order in alternative:
             ensure(order)
         row = {
             "kind": kind,
             "lane": lane,
+            "_current_orders": lane_current,
+            "_alternative_orders": alternative,
             **(details or {}),
             **_metrics(
-                [order for order in current if order["lane"] == lane],
+                lane_current,
                 alternative,
                 vectors,
                 case["cash_gp"],
                 contract,
             ),
         }
-        _annotate_outcome(
-            row,
-            [order for order in current if order["lane"] == lane],
-            alternative,
-            case["fixture"],
-            visible["as_of"],
-            outcomes,
-            coverage,
-            contract,
-        )
         records.append(row)
 
     for lane_name in contract["simulation"]:
@@ -730,6 +723,28 @@ def analyze_case(case: dict, frontier: list[dict], visible: dict,
             "frontier_actions": len(lane_actions),
         })
 
+    return records
+
+
+def analyze_case(case: dict, frontier: list[dict], visible: dict,
+                 outcomes: dict[int, dict], coverage_rows: list[dict],
+                 contract: dict, prior_case: dict | None = None,
+                 replay_cache: dict | None = None) -> dict:
+    """Add withheld characterization after visible challenger construction."""
+    records = visible_challengers(
+        case, frontier, visible, contract, prior_case, replay_cache
+    )
+    coverage = {
+        coverage_key(row["fixture"], row["item_id"], row["lane"], row["as_of"]): row
+        for row in coverage_rows
+    }
+    for row in records:
+        current = row.pop("_current_orders")
+        alternative = row.pop("_alternative_orders")
+        _annotate_outcome(
+            row, current, alternative, case["fixture"], visible["as_of"],
+            outcomes, coverage, contract,
+        )
     counts = {}
     for row in records:
         key = f"{row['lane']}:{row['kind']}"
