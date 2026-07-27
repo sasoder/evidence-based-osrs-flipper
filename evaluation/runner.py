@@ -352,13 +352,17 @@ def evaluate(contract_path: Path = DEFAULT_CONTRACT,
         "git_revision": _git_revision(),
         "contract": str(contract_path.relative_to(ROOT.parent)),
         "contract_sha256": _sha256(contract_path),
-        "evaluator_sha256": _sha256(Path(__file__)),
+        "evaluator_sha256": _combined_sha256([
+            Path(__file__),
+            ROOT / "selection_contract.py",
+        ]),
         "oracle_sha256": _combined_sha256([
             contract_path,
             Path(__file__),
             ROOT / "selection_contract.py",
             ROOT / "compare.py",
             ROOT.parent / "tests/test_evaluation.py",
+            ROOT.parent / "tests/test_selection_contract.py",
         ]),
         "fixtures": [
             {"name": fixture["name"], "source": fixture["source"],

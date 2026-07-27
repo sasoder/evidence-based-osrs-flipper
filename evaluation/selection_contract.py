@@ -44,7 +44,7 @@ def visible_fixture(fixture: dict) -> dict:
         })
     visible = {
         key: fixture[key]
-        for key in ("name", "as_of", "seed", "regime", "universe", "source", "source_sha256")
+        for key in ("name", "as_of", "seed", "regime", "source", "source_sha256")
         if key in fixture
     }
     visible["items"] = visible_items
@@ -53,14 +53,20 @@ def visible_fixture(fixture: dict) -> dict:
 
 
 def assert_visible(fixture: dict) -> None:
+    def reject_metadata(value) -> None:
+        if isinstance(value, dict):
+            for key, nested in value.items():
+                lowered = key.lower()
+                if "coverage" in lowered or lowered == "future":
+                    raise ValueError(f"withheld metadata reached visible input: {key}")
+                reject_metadata(nested)
+        elif isinstance(value, list):
+            for nested in value:
+                reject_metadata(nested)
+
+    reject_metadata(fixture)
     for item in fixture.get("items", []):
-        leaked = WITHHELD_ITEM_FIELDS.intersection(item)
-        if leaked:
-            raise ValueError(f"withheld fixture fields reached visible input: {sorted(leaked)}")
-        for history in item.get("history", {}).values():
-            for bucket in history:
-                if any("coverage" in key.lower() for key in bucket):
-                    raise ValueError("coverage metadata reached visible history")
+        assert not WITHHELD_ITEM_FIELDS.intersection(item)
 
 
 def withheld_items(fixture: dict) -> dict[int, dict]:

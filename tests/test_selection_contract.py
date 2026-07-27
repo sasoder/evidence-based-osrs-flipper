@@ -122,11 +122,16 @@ class SelectionContractTests(unittest.TestCase):
         self.assertNotIn("coverage_flags", visible["items"][0])
         selection.assert_visible(visible)
 
-        with self.assertRaisesRegex(ValueError, "coverage metadata"):
+        with self.assertRaisesRegex(ValueError, "withheld metadata"):
             selection.assert_visible({
                 "items": [{**visible["items"][0], "history": {
                     "1h": [{**bucket(0), "future_coverage": True}]
                 }}]
+            })
+        with self.assertRaisesRegex(ValueError, "withheld metadata"):
+            selection.assert_visible({
+                **visible,
+                "universe": {"selection_coverage": True},
             })
 
     def test_planner_execution_receives_only_visible_input_shape(self) -> None:
@@ -186,6 +191,10 @@ class SelectionContractTests(unittest.TestCase):
         self.assertNotEqual(
             selection.order_signature(base),
             selection.order_signature({**base, "buy_price": 99}),
+        )
+        self.assertEqual(
+            tuple(selection.executable_order(base)),
+            selection.EXECUTABLE_FIELDS,
         )
 
     def test_coverage_is_qualified_by_fixture_item_lane_and_as_of(self) -> None:
