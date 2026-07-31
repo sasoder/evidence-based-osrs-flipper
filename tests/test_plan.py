@@ -1146,7 +1146,7 @@ class DeploymentConstraintTests(unittest.TestCase):
     def test_slot_cap_is_named_when_it_binds(self) -> None:
         p = self._plan([_sig(i, 100 - i, fillable=50) for i in range(1, 5)],
                        cash=100_000_000, max_new_slots=1)
-        self.assertIn("GE slots are committed", p["deployment"]["constraint"])
+        self.assertIn("--max-new-slots 1", p["deployment"]["constraint"])
 
     def test_empty_plan_names_the_gate_that_rejected_the_candidates(self) -> None:
         p = self._plan([_sig(i, 100, fillable=50, regime="high") for i in range(1, 4)],

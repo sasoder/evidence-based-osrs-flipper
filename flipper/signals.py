@@ -1165,6 +1165,9 @@ def time_of_day_signal(item_id: int) -> dict | None:
 
     exit_bucket = (entry_bucket + hold_steps) % TIME_OF_DAY_BUCKETS
     hold_hours = hold_steps * TIME_OF_DAY_STEP_HOURS
+    # Credit the replayed mean, not the paper live spread: partial fills and forced exits
+    # already shaped qualifies, and floors/ranking must use the same number.
+    avg_profit_per_unit = round(replay["mean_profit_gp"] / max(1, fillable_qty))
     return {
         "id": item_id,
         "name": meta["name"],
@@ -1174,8 +1177,8 @@ def time_of_day_signal(item_id: int) -> dict | None:
         "current_high": latest["current_high"],
         "ge_limit": meta["limit"],
         "fillable_qty": fillable_qty,
-        "expected_profit_per_unit": expected_profit,
-        "expected_profit": expected_profit * fillable_qty,
+        "expected_profit_per_unit": avg_profit_per_unit,
+        "expected_profit": replay["mean_profit_gp"],
         "hold_hours": hold_hours,
         "entry_window_utc": _utc_window(entry_bucket),
         "exit_window_utc": _utc_window(exit_bucket),
@@ -1184,7 +1187,7 @@ def time_of_day_signal(item_id: int) -> dict | None:
         "regime": regime,
         "replay_evidence": replay,
         "pattern_kind": "seasonal-utc",
-        "score": round(expected_profit * fillable_qty / hold_hours),
+        "score": round(replay["mean_profit_gp"] / hold_hours),
     }
 
 

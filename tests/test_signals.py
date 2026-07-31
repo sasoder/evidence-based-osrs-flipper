@@ -348,6 +348,11 @@ class SignalTests(unittest.TestCase):
         self.assertEqual(signal["current_low"], 100)
         self.assertEqual(signal["current_high"], 111)
         self.assertLessEqual(signal["hold_hours"], 24)
+        self.assertEqual(
+            signal["expected_profit_per_unit"],
+            round(signal["replay_evidence"]["mean_profit_gp"] / max(1, signal["fillable_qty"])),
+        )
+        self.assertEqual(signal["expected_profit"], signal["replay_evidence"]["mean_profit_gp"])
 
     def test_time_replay_charges_unfilled_cash_and_forces_inventory_out(self) -> None:
         rows = []

@@ -173,7 +173,14 @@ def _buy_row(sig: dict, band_evidence: dict, qty: int, expected_profit: int,
     }
 
 
-def _deployment_constraint(out: dict, planned_buys: list[dict], free_slots: int) -> str:
+def _deployment_constraint(
+    out: dict,
+    planned_buys: list[dict],
+    free_slots: int,
+    *,
+    max_new_slots: int | None = None,
+    physical_free_slots: int,
+) -> str:
     """Name what actually stopped the plan from using the rest of the liquid.
 
     Idle gp with the binding constraint stated beats filling slots for the sake of the
@@ -182,6 +189,10 @@ def _deployment_constraint(out: dict, planned_buys: list[dict], free_slots: int)
     """
     skipped = out["skipped"] + out["active_skipped"] + out["time_skipped"]
     if free_slots <= 0:
+        # free_slots is min(physical open slots, --max-new-slots). Only blame the GE board
+        # when that cap was not tighter than the physical free count.
+        if max_new_slots is not None and physical_free_slots > max_new_slots:
+            return f"--max-new-slots {max_new_slots}"
         return f"all {MAX_SLOTS} GE slots are committed"
     if not planned_buys:
         top = Counter(
@@ -887,7 +898,8 @@ def plan(cash: int, offers: list[dict] | None = None,
         o["id"] for o, row in zip(offers, offer_triage)
         if row.get("verdict") in {"hold", "reprice"}
     }
-    free_slots = projection["free_slots"]
+    physical_free_slots = projection["free_slots"]
+    free_slots = physical_free_slots
     if max_new_slots is not None:
         free_slots = min(free_slots, max_new_slots)
     budget_left = projection["budget_left"]
@@ -1281,7 +1293,13 @@ def plan(cash: int, offers: list[dict] | None = None,
         "utilization_pct": round(utilization * 100, 1),
         "constraint": (
             None if unspent <= int(available * DEPLOYMENT_SHORTFALL_PCT)
-            else _deployment_constraint(out, planned_buys, free_slots)
+            else _deployment_constraint(
+                out,
+                planned_buys,
+                free_slots,
+                max_new_slots=max_new_slots,
+                physical_free_slots=physical_free_slots,
+            )
         ),
     }
     return out
