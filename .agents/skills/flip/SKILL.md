@@ -206,14 +206,13 @@ liquidity, budget, or slot gates.
 - The user may constrain the run with planner flags such as `--strategies patient,active` and
   `--max-new-slots 3`. Treat those as deterministic constraints. Do not add disabled strategies back
   by hand, and do not exceed the slot cap to improve utilization.
-- Patient and time-of-day order sizes may exceed the expected-fill estimate up to the signal's
-  `exit_capacity_qty` (what the sell side can absorb before the lane's exit deadline, capped by
-  GE limit and budget): a buy-side partial fill is nearly free, while the exit leg is what
-  strands capital. Expected profit and the profit floors stay anchored to the conservative
-  `fillable_qty` expected-fill estimate, so unlikely fills are never credited. Active offers
-  keep exact flow-based sizing — high-value partial fills are not free.
-- Every slot must clear two floors: the flat per-slot floor (0.02% of liquid) and a
-  capital-return floor (0.05%/hour on the gp expected to be committed to the round trip).
+- Every lane sizes to the conservative `fillable_qty` expected-fill estimate, capped by budget
+  and GE limit, so unlikely fills are never credited. Patient and time-of-day positions are
+  additionally capped by what a replayed forced exit would cost; active positions draw on a single
+  lane-wide forced-exit risk budget shared across every active slot the run opens.
+- Every slot must clear two floors: a flat per-slot floor (1,000gp — absolute, because what one
+  offer can earn is capped by the item's buy limit and flow, not by the bank) and a capital-return
+  floor (0.05%/hour on the gp expected to be committed to the round trip).
   A thin item (low `score` driven by small `liquidity_profit`) stays small or unfilled
   regardless of margin.
 - The default patient flip horizon is 2-6h with a hard 12h exit. Never reprice a buy upward. Cancel
