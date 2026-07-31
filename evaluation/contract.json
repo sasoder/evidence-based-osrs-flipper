@@ -1,5 +1,5 @@
 {
-  "version": 1,
+  "version": 2,
   "bankrolls_gp": [10000000, 30000000, 70000000, 100000000, 250000000, 1000000000],
   "attendance": [
     {"name": "attended", "away_hours": null, "horizon": "intraday"},
@@ -7,15 +7,129 @@
     {"name": "overnight", "away_hours": 12, "horizon": "overnight"}
   ],
   "slot_caps": [1, 4, 8],
-  "strategies": "balanced",
-  "minimum_expected_return_per_posted_capital_hour": 0.0005,
+  "decision_lanes": {
+    "patient": {
+      "timestep": "1h",
+      "strategies": "patient,probe",
+      "order_lanes": ["patient", "patient-probe"],
+      "attendance": ["attended", "away_2h", "overnight"],
+      "minimum_observed_snapshot_items": 25
+    },
+    "active": {
+      "timestep": "5m",
+      "strategies": "active",
+      "order_lanes": ["active-margin"],
+      "attendance": ["attended"],
+      "minimum_observed_snapshot_items": 5
+    },
+    "time": {
+      "timestep": "6h",
+      "strategies": "time",
+      "order_lanes": ["time-of-day"],
+      "attendance": ["attended", "away_2h"],
+      "minimum_observed_snapshot_items": 25
+    }
+  },
+  "minimum_visible_return_per_posted_capital_hour": 0.0005,
+  "minimum_non_overlapping_blocks": 3,
+  "minimum_opportunity_episodes": 2,
   "maximum_position_loss_pct": 0.01,
   "maximum_portfolio_loss_pct": 0.03,
-  "dominance_tolerance_gp": 0,
+  "minimum_cohort_covered_order_rate": 1.0,
+  "challenger_materiality": {
+    "status": "frozen_v2",
+    "selected_fraction_of_bankroll": 0.00005,
+    "candidates": [
+      {"name": "0.1bp", "fraction_of_bankroll": 0.00001},
+      {"name": "0.25bp", "fraction_of_bankroll": 0.000025},
+      {"name": "0.5bp", "fraction_of_bankroll": 0.00005},
+      {"name": "1bp", "fraction_of_bankroll": 0.0001},
+      {"name": "2.5bp", "fraction_of_bankroll": 0.00025}
+    ]
+  },
   "simulation": {
-    "patient": {"timestep": "1h", "entry_hours": 4, "hold_hours": 12, "participation_rate": 0.10},
-    "patient-probe": {"timestep": "1h", "entry_hours": 4, "hold_hours": 12, "participation_rate": 0.05},
-    "active-margin": {"timestep": "5m", "entry_hours": 0.5, "hold_hours": 1.5, "participation_rate": 0.25},
-    "time-of-day": {"timestep": "6h", "entry_hours": 6, "hold_hours": 24, "participation_rate": 0.05}
+    "patient": {
+      "decision_lane": "patient",
+      "timestep": "1h",
+      "entry_hours": 4,
+      "hold_hours": 12,
+      "participation_rate": 0.10
+    },
+    "patient-probe": {
+      "decision_lane": "patient",
+      "timestep": "1h",
+      "entry_hours": 4,
+      "hold_hours": 12,
+      "participation_rate": 0.05
+    },
+    "active-margin": {
+      "decision_lane": "active",
+      "timestep": "5m",
+      "entry_hours": 0.5,
+      "hold_hours": 1.5,
+      "participation_rate": 0.25
+    },
+    "time-of-day": {
+      "decision_lane": "time",
+      "timestep": "6h",
+      "entry_hours": 6,
+      "hold_hours": 24,
+      "participation_rate": 0.05
+    }
+  },
+  "fixture_classes": ["observed", "synthetic"],
+  "tax": {
+    "rate": 0.02,
+    "per_item_cap_gp": 5000000,
+    "exempt_item_ids": [233, 952, 1733, 1735, 1755, 2347, 5325, 5329, 5331, 5341, 5343, 8794, 13190],
+    "exempt_item_names": [
+      "ardougne teleport",
+      "bass",
+      "bread",
+      "bronze arrow",
+      "bronze dart",
+      "cake",
+      "camelot teleport",
+      "chisel",
+      "cooked chicken",
+      "cooked meat",
+      "energy potion(1)",
+      "energy potion(2)",
+      "energy potion(3)",
+      "energy potion(4)",
+      "falador teleport",
+      "fortis teleport",
+      "gardening trowel",
+      "hammer",
+      "herring",
+      "iron arrow",
+      "iron dart",
+      "kourend castle teleport",
+      "lobster",
+      "lumbridge teleport",
+      "mackerel",
+      "meat pie",
+      "mind rune",
+      "minigame teleport",
+      "needle",
+      "old school bond",
+      "pestle and mortar",
+      "pike",
+      "rake",
+      "ring of dueling(8)",
+      "salmon",
+      "saw",
+      "secateurs",
+      "seed dibber",
+      "shears",
+      "shrimp",
+      "spade",
+      "steel arrow",
+      "steel dart",
+      "teleport to house",
+      "tuna",
+      "varrock teleport",
+      "watering can(0)"
+    ]
   }
 }

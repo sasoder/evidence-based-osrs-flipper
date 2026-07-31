@@ -1,5 +1,9 @@
 # Evaluator v2 phase-one characterization
 
+> Historical artifact: this report describes the superseded report-only selection contract at
+> `34954d1`. It is not an active acceptance contract or compatibility target. The current
+> frozen contract is documented in [SPEC.md](SPEC.md).
+
 This report records infrastructure and characterization only. Evaluator v2 is report-only: it is
 not accepted, frozen, or an acceptance gate for planner work. The accepted v1 baseline was not
 regenerated or replaced.
@@ -68,7 +72,7 @@ is the 26.493-second planner matrix; input projection took 1.060 seconds, fronti
 
 `uv run python -m unittest` passes 169 tests with one intentional expected failure for the unresolved
 tax-exemption discrepancy. `git diff --check` passes. Planner files and
-`evaluation/baselines/main.json` remain unchanged.
+the then-current baseline (now `evaluation/baselines/v1-main.json`) remained unchanged.
 
 The reviewed-base run still reports the v1 baseline's existing 133 case violations and 128
 dominance violations. This phase does not reinterpret or accept them. The detached `72feb46` run

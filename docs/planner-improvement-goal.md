@@ -1,5 +1,11 @@
 # Planner self-improvement goal
 
+> Superseded exploratory artifact. This document describes the V1 repair loop that produced
+> `72feb46`; it is not a compatibility target and must not be used as a V2 acceptance target.
+> A future optimization goal must be written against the frozen `evaluation/SPEC.md`. No planner
+> optimization is part of the V2 finalization change. Commands and completion criteria below are
+> retained as historical context and are not supported by the V2 comparison CLI.
+
 ## Outcome
 
 Repair and then improve the deterministic planner until it passes the frozen evaluation contract
