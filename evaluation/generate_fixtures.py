@@ -1,7 +1,7 @@
-"""Generate the checked-in synthetic raw-market regression corpus.
+"""Generate the checked-in synthetic evaluator-v2 regression corpus.
 
-The output is deterministic. This script exists to make fixture provenance inspectable; optimization
-goals must treat the generated JSON as immutable.
+The output is deterministic. Each strategy family receives its own decision cutoff so its visible
+history ends exactly one bucket before withheld outcomes begin.
 """
 
 from __future__ import annotations
@@ -114,17 +114,37 @@ def _item(scenario_index: int, seed: int, mode: str, tier: tuple,
 def build() -> dict:
     fixtures = []
     for scenario_index, (name, seed, mode) in enumerate(SCENARIOS):
+        items = [
+            _item(scenario_index, seed, mode, tier, tier_index)
+            for tier_index, tier in enumerate(TIERS)
+        ]
+        decision_cutoffs = {
+            "patient": datetime.fromtimestamp(
+                items[0]["history"]["1h"][-1]["timestamp"], timezone.utc
+            ).isoformat(),
+            "active": datetime.fromtimestamp(
+                items[0]["history"]["5m"][-1]["timestamp"], timezone.utc
+            ).isoformat(),
+            "time": datetime.fromtimestamp(
+                items[0]["history"]["6h"][-1]["timestamp"], timezone.utc
+            ).isoformat(),
+        }
         fixtures.append({
             "name": name,
             "seed": seed,
             "regime": mode,
-            "as_of": datetime.fromtimestamp(AS_OF, timezone.utc).isoformat(),
-            "items": [
-                _item(scenario_index, seed, mode, tier, tier_index)
-                for tier_index, tier in enumerate(TIERS)
-            ],
+            "fixture_class": "synthetic",
+            "as_of": decision_cutoffs["patient"],
+            "decision_cutoffs": decision_cutoffs,
+            "source_provenance": {
+                "kind": "deterministic_generator",
+                "generator": "evaluation.generate_fixtures",
+                "seed": seed,
+                "review_status": "checked_in",
+            },
+            "items": items,
         })
-    return {"version": 1, "fixtures": fixtures}
+    return {"version": 2, "fixtures": fixtures}
 
 
 def main() -> int:

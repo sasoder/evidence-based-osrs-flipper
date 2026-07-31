@@ -99,13 +99,16 @@ universes across dates, bankrolls, attendance horizons, and slot caps, then scor
 on withheld future buckets:
 
 ```bash
-uv run python -m evaluation.runner --output evaluation/results/current.json
+uv run python -m evaluation.runner --output evaluation/results/v2-current.json
 uv run python -m evaluation.compare \
-  evaluation/baselines/main.json evaluation/results/current.json --mode repair
+  evaluation/baselines/v2-main.json evaluation/results/v2-current.json
 ```
 
-The evaluator and its fixtures must not change in the same patch as planner behavior. See
-[`evaluation/SPEC.md`](evaluation/SPEC.md) for the acceptance contract.
+Observed and synthetic cohorts gate separately within each decision lane. V2 does not claim
+mixed-lane whole-planner portfolio optimality. The frozen baseline records reproducibility and
+characterization; it does not relax candidate acceptance. The evaluator and its fixtures must not
+change in the same patch as planner behavior. See
+[`evaluation/SPEC.md`](evaluation/SPEC.md).
 
 ## Runtime data
 
