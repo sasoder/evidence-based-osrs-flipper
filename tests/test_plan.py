@@ -185,6 +185,7 @@ def _bt(ok=True):
         "trades": 5,
         "median_hold_points": 4,
         "median_hold_hours": 4,
+        "max_adverse_pct": -5.0,
     } if ok else None
 
 
