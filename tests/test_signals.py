@@ -28,14 +28,6 @@ class SignalTests(unittest.TestCase):
         # thinner side (10/h) * 4h window * 0.10 participation = 4
         self.assertEqual(signals._fillable_qty(1000, volume, signals.FILL_WINDOW_HOURS), 4)
 
-    def test_exit_capacity_uses_sell_side_flow_over_the_exit_window(self) -> None:
-        volume = {"low": 1000, "high": 10, "total": 1010}
-
-        # sell side (10/h) * 12h exit window * 0.10 participation = 12, GE limit caps at 1000
-        self.assertEqual(signals._exit_capacity_qty(1000, volume, 12, 0.10), 12)
-        # GE limit binds when the sell side is deep
-        self.assertEqual(signals._exit_capacity_qty(5, volume, 12, 0.10), 5)
-
     def test_scan_zero_seed_limit_scans_all_and_forwards_fill_window(self) -> None:
         with (
             patch("flipper.signals.prices.margins", return_value=[{"id": 1, "score": 1}]) as margins,
@@ -92,9 +84,59 @@ class SignalTests(unittest.TestCase):
         self.assertEqual(signal["entry_price"], 90)
         self.assertTrue(signal["ready_to_buy"])
 
-    def test_near_band_bid_is_probe_only_not_production_ready(self) -> None:
-        # The live low (102) sits 2% above the band (100). That is not evidence that the band
-        # recently traded, so production stays blocked while the experimental probe strategy may bid.
+    def test_patient_order_replay_applies_touch_capacity_and_capital_cost(self) -> None:
+        rows = []
+        for _ in range(3):
+            rows.extend([
+                {
+                    "avgLowPrice": 100,
+                    "avgHighPrice": 105,
+                    "lowPriceVolume": 100,
+                    "highPriceVolume": 0,
+                },
+                {
+                    "avgLowPrice": 105,
+                    "avgHighPrice": 130,
+                    "lowPriceVolume": 0,
+                    "highPriceVolume": 100,
+                },
+                *[
+                    {
+                        "avgLowPrice": 105,
+                        "avgHighPrice": 110,
+                        "lowPriceVolume": 0,
+                        "highPriceVolume": 0,
+                    }
+                    for _ in range(14)
+                ],
+            ])
+
+        evidence = signals._patient_order_replay(
+            rows,
+            buy=101,
+            sell=129,
+            quantity=10,
+            entry_hours=4,
+            participation=0.10,
+        )
+        thin = signals._patient_order_replay(
+            rows, buy=101, sell=129, quantity=10, entry_hours=4, participation=0.01,
+        )
+
+        self.assertEqual(evidence["blocks"], 3)
+        self.assertEqual(evidence["opportunity_episodes"], 3)
+        self.assertTrue(evidence["qualifies"])
+        # Touch capacity: the same order against the same prints, but able to take only 1% of
+        # each bucket instead of 10%, must book strictly less. Without the capacity cap the two
+        # runs would be identical.
+        self.assertLess(thin["mean_profit_gp"], evidence["mean_profit_gp"])
+        # Capital cost: utility is profit minus the reservation charge on posted gp.
+        self.assertLess(evidence["mean_utility_gp"], evidence["mean_profit_gp"])
+
+    def test_bid_inside_the_ready_window_posts_at_the_live_low(self) -> None:
+        # The live low (102) sits 2% above the band (100), inside PATIENT_READY_MAX_DISTANCE_PCT.
+        # The order that gets posted — and that the replay evidence validates — is the live one, so
+        # entry_price is the live low, not the band. The band stays visible as `buy_band`.
         now = int(time.time())
         with (
             patch("flipper.prices.mapping_by_id", return_value={1: {"id": 1, "name": "Test item", "limit": 100}}),
@@ -110,9 +152,9 @@ class SignalTests(unittest.TestCase):
 
         assert signal is not None
         self.assertEqual(signal["buy_band"], 100)
-        self.assertEqual(signal["entry_price"], 100)
-        self.assertFalse(signal["ready_to_buy"])
-        self.assertTrue(signal["patient_probe_ready"])
+        self.assertEqual(signal["entry_price"], 102)
+        self.assertTrue(signal["ready_to_buy"])
+        self.assertFalse(signal["patient_probe_ready"])
 
     def test_patient_bid_not_ready_when_live_low_far_above_band(self) -> None:
         # Live low 120 is 20% above the band — the bid would never fill in the window. Not ready.
@@ -136,8 +178,8 @@ class SignalTests(unittest.TestCase):
     def test_active_margin_scan_accepts_fresh_stable_after_tax_spread(self) -> None:
         now = int(time.time())
         stable = _rows(12)
-        for row in stable:
-            row["avgLowPrice"] = 10_000_000
+        for index, row in enumerate(stable):
+            row["avgLowPrice"] = 10_000_000 if index % 4 == 0 else 10_100_000
             row["avgHighPrice"] = 10_300_000
         with (
             patch("flipper.prices.margins", return_value=[{
@@ -158,15 +200,51 @@ class SignalTests(unittest.TestCase):
 
         self.assertEqual(len(result["candidates"]), 1)
         row = result["candidates"][0]
-        self.assertEqual(row["entry_price"], 10_000_001)
-        self.assertEqual(row["exit_price"], 10_299_999)
+        # Quote one coin inside the touch on both sides. Same-price GE offers fill first-in-
+        # first-out, so an order posted exactly at the last executed bid queues behind everything
+        # already resting there; one coin buys priority against a six-figure margin.
+        self.assertEqual(row["entry_price"], 10_000_000 + 1)
+        self.assertEqual(row["exit_price"], 10_300_000 - 1)
         self.assertEqual(row["current_low"], 10_000_000)
         self.assertEqual(row["current_high"], 10_300_000)
         self.assertEqual(row["max_qty"], 1)
         self.assertEqual(row["fillable_qty"], 1)
         self.assertGreater(row["expected_value_per_unit"], 0)
         self.assertGreater(row["expected_gp_per_hour"], 0)
-        self.assertGreaterEqual(row["net_margin"], signals.ACTIVE_MIN_NET_MARGIN)
+        # Admission is on the scale-free ROI floor, not an absolute per-unit margin: the same
+        # spread must read the same way to a 5m and a 1b bankroll.
+        self.assertGreaterEqual(row["roi_pct"], signals.ACTIVE_MIN_ROI_PCT)
+
+    def test_active_margin_scan_rejects_edge_smaller_than_its_replayed_loss(self) -> None:
+        # Same spread as the accepted case, but this order has actually been force-exited into a
+        # drawdown far bigger than its edge during the replay window. Thin edge, fat tail.
+        now = int(time.time())
+        rows = _rows(60)
+        for index, row in enumerate(rows):
+            row["avgLowPrice"] = 10_000_000 if index % 4 == 0 else 10_100_000
+            row["avgHighPrice"] = 10_300_000
+        for row in rows[40:]:              # entry touch, then no target inside the hold window
+            row["avgLowPrice"] = 9_900_000
+            row["avgHighPrice"] = 10_000_000
+        with (
+            patch("flipper.prices.margins", return_value=[{
+                "id": 1, "name": "Thin gear", "buy": 10_000_000, "sell": 10_300_000,
+                "margin": 94_000, "ge_limit": 8, "vol_1h": 10, "potential_1h": 752_000,
+            }]),
+            patch("flipper.prices.latest", return_value={
+                "1": {"low": 10_000_000, "high": 10_300_000,
+                      "lowTime": now, "highTime": now}
+            }),
+            patch("flipper.prices.one_hour", return_value={
+                "1": {"lowPriceVolume": 5, "highPriceVolume": 5}
+            }),
+            patch("flipper.prices.timeseries", return_value=rows),
+            patch("flipper.prices.prefetch_timeseries"),
+        ):
+            result = signals.active_margin_scan()
+
+        self.assertEqual(result["candidates"], [])
+        self.assertIn("worst replayed loss", result["rejected"][0]["reason"])
 
     def test_active_margin_scan_rejects_stale_quote(self) -> None:
         now = int(time.time())
@@ -202,6 +280,34 @@ class SignalTests(unittest.TestCase):
         self.assertEqual(result["candidates"], [])
         self.assertEqual(result["rejected"][0]["reason"], "active item has no GE limit")
 
+    def test_active_replay_requires_repeatable_profitable_round_trips(self) -> None:
+        rows = []
+        for cycle in range(3):
+            rows.extend([
+                {
+                    "avgLowPrice": 100,
+                    "avgHighPrice": 105,
+                    "timestamp": cycle * 1_000,
+                },
+                {
+                    "avgLowPrice": 104,
+                    "avgHighPrice": 120,
+                    "timestamp": cycle * 1_000 + 300,
+                },
+                {
+                    "avgLowPrice": 110,
+                    "avgHighPrice": 115,
+                    "timestamp": cycle * 1_000 + 600,
+                },
+            ])
+
+        evidence = signals._active_replay_evidence(rows, buy=101, sell=119)
+
+        self.assertEqual(evidence["trades"], 3)
+        self.assertEqual(evidence["opportunity_episodes"], 3)
+        self.assertEqual(evidence["win_rate"], 1)
+        self.assertGreater(evidence["mean_profit_per_unit"], 0)
+
     def test_time_of_day_signal_requires_profitable_holdout_window(self) -> None:
         step = 6 * 3600
         end = int(time.time()) // step * step
@@ -230,7 +336,7 @@ class SignalTests(unittest.TestCase):
                 "1": {"low": 100, "high": 111, "lowTime": now, "highTime": now}
             }),
             patch("flipper.prices.one_hour", return_value={
-                "1": {"lowPriceVolume": 10_000, "highPriceVolume": 10_000}
+                "1": {"lowPriceVolume": 100, "highPriceVolume": 100}
             }),
         ):
             signal = signals.time_of_day_signal(1)
@@ -243,7 +349,65 @@ class SignalTests(unittest.TestCase):
         self.assertEqual(signal["current_high"], 111)
         self.assertLessEqual(signal["hold_hours"], 24)
 
+    def test_time_replay_charges_unfilled_cash_and_forces_inventory_out(self) -> None:
+        rows = []
+        for block in range(3):
+            rows.extend([
+                {
+                    "avgLowPrice": 100,
+                    "avgHighPrice": 105,
+                    "lowPriceVolume": 100,
+                    "highPriceVolume": 0,
+                },
+                {
+                    "avgLowPrice": 105,
+                    "avgHighPrice": 130,
+                    "lowPriceVolume": 0,
+                    "highPriceVolume": 100,
+                },
+                *[
+                    {
+                        "avgLowPrice": 105,
+                        "avgHighPrice": 110,
+                        "lowPriceVolume": 0,
+                        "highPriceVolume": 0,
+                    }
+                    for _ in range(3)
+                ],
+            ])
 
+        evidence = signals._time_replay_evidence(
+            rows,
+            buy=101,
+            sell=129,
+            quantity=5,
+        )
+
+        self.assertEqual(evidence["blocks"], 3)
+        self.assertEqual(evidence["opportunity_episodes"], 3)
+        self.assertTrue(evidence["qualifies"])
+        self.assertLess(evidence["mean_utility_gp"], evidence["mean_profit_gp"])
+
+    def test_time_replay_books_a_loss_when_the_target_never_trades(self) -> None:
+        # The sell target is never reached, so every block ends by crossing back to the low side.
+        # Without a forced exit the replay would report a costless zero instead of the real loss.
+        rows = []
+        for block in range(3):
+            rows.extend([
+                {"avgLowPrice": 100, "avgHighPrice": 105,
+                 "lowPriceVolume": 100, "highPriceVolume": 0},
+                *[
+                    {"avgLowPrice": 90, "avgHighPrice": 95,
+                     "lowPriceVolume": 0, "highPriceVolume": 100}
+                    for _ in range(4)
+                ],
+            ])
+
+        evidence = signals._time_replay_evidence(rows, buy=101, sell=129, quantity=5)
+
+        self.assertEqual(evidence["blocks"], 3)
+        self.assertLess(evidence["worst_profit_gp"], 0)
+        self.assertFalse(evidence["qualifies"])
 
 def _trend_rows(start_mid: int, end_mid: int, n: int = 120, spread: int = 20) -> list[dict]:
     """Linear price path of n points from start_mid to end_mid, half-spread each side."""
@@ -315,7 +479,7 @@ class TrendTests(unittest.TestCase):
 
         assert signal is not None
         self.assertEqual(signal["trend"]["direction"], "flat")
-        self.assertEqual(signal["exit_price"], signal["sell_band_full"])
+        self.assertEqual(signal["sell_band"], signal["sell_band_full"])
         self.assertNotEqual(signal["regime"]["reason"], "sustained_downtrend")
 
 
@@ -430,8 +594,8 @@ class CrashGuardTests(unittest.TestCase):
         assert signal is not None
         self.assertEqual(signal["regime"]["level"], "high")
         self.assertEqual(signal["regime"]["reason"], "short_window_price_shock")
-        self.assertEqual(signal["exit_price"], 2575)
-        self.assertLess(signal["exit_price"], signal["sell_band_full"])
+        self.assertEqual(signal["sell_band"], 2575)
+        self.assertLess(signal["sell_band"], signal["sell_band_full"])
 
 
 
