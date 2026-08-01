@@ -18,7 +18,7 @@ Inspired by Leverage In Action's
 ## Getting started
 
 You need Python 3.11+ and a coding agent, unless you want to use the CLI yourself. Clone the repo
-with Git if you want easy updates, or download the ZIP to get started without it. The examples use
+with Git to keep the repo up to date easily, or download the ZIP to get started without it. The examples use
 [uv](https://docs.astral.sh/uv/). If you already manage Python with venv or conda, run the same
 commands with `python` instead of `uv run python`.
 
