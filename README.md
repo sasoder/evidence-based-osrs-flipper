@@ -17,10 +17,10 @@ Inspired by Leverage In Action's
 
 ## Getting started
 
-You need Python 3.11+ and a coding agent, unless you want to use the CLI yourself. Git is the
-nicest way to keep the repo up to date, but downloading it as a ZIP works fine too.
-[uv](https://docs.astral.sh/uv/) is recommended, but a regular virtual environment or conda
-environment works too. In that case, use `python` wherever the examples use `uv run python`.
+You need Python 3.11+ and a coding agent, unless you want to use the CLI yourself. Clone the repo
+with Git if you want easy updates, or download the ZIP to get started without it. The examples use
+[uv](https://docs.astral.sh/uv/). If you already manage Python with venv or conda, run the same
+commands with `python` instead of `uv run python`.
 
 1. **Get the repo** (clone it, or [download it as a ZIP](https://github.com/sasoder/evidence-based-osrs-flipper/archive/refs/heads/main.zip) and unzip it)
   ```bash
@@ -64,9 +64,7 @@ around, which strategies, and slot cap. A plan looks like this:
 
 
 Every row includes the latest instant-sell/instant-buy prices (`live lo/hi`), the gp the offer
-commits (`capital`), and its expected after-tax profit. The short `basis` column keeps the table
-readable. The longer explanation is still saved with the intent, so later runs do not lose the
-reasoning behind the call.
+commits (`capital`), and its expected after-tax profit, so you can check the call before placing it.
 
 ## How it decides
 
