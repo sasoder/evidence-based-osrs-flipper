@@ -857,9 +857,17 @@ def _personal_candidate_ids(stats: dict[int, dict]) -> list[int]:
 
 
 def _add_personal_candidates(rows: list[dict], stats: dict[int, dict],
-                             fill_window_hours: float) -> list[dict]:
+                             fill_window_hours: float) -> tuple[list[dict], list[dict]]:
+    """Seed the patient pool with the account's best FU round-trip items.
+
+    Returns the widened pool plus a row for every personal item that could not be priced
+    at all. A pulled-in winner that silently disappears reads as "checked and rejected",
+    which is the one answer the planner must never imply — but it did not fail a gate
+    either, so it is reported separately from `skipped`.
+    """
     seen = {row["id"] for row in rows}
     out = list(rows)
+    unevaluated = []
     for iid in _personal_candidate_ids(stats):
         if iid in seen:
             continue
@@ -867,8 +875,14 @@ def _add_personal_candidates(rows: list[dict], stats: dict[int, dict],
         if sig:
             out.append(sig)
             seen.add(iid)
+        else:
+            unevaluated.append({
+                "id": iid,
+                "name": (stats.get(iid) or {}).get("name") or f"item_{iid}",
+                "reason": "no live signal — not evaluated against today's market",
+            })
     out.sort(key=lambda row: row["score"], reverse=True)
-    return out
+    return out, unevaluated
 
 
 def plan(cash: int, offers: list[dict] | None = None,
@@ -942,6 +956,7 @@ def plan(cash: int, offers: list[dict] | None = None,
             if item.get("round_trip", {}).get("staple")
         ],
         "skipped": [], "active_skipped": [], "active_filter_summary": {},
+        "personal_unevaluated": [],
         "time_skipped": [], "time_filter_summary": {},
     }
 
@@ -990,7 +1005,10 @@ def plan(cash: int, offers: list[dict] | None = None,
             min_volume=1,
             fill_window_hours=fill_window_hours,
         )
-        patient_candidates = _add_personal_candidates(patient_scan, personal_stats, fill_window_hours)
+        patient_candidates, unevaluated = _add_personal_candidates(
+            patient_scan, personal_stats, fill_window_hours
+        )
+        out["personal_unevaluated"] = unevaluated
     for sig in patient_candidates:
         iid = sig["id"]
         if iid in avoid:

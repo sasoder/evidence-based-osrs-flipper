@@ -476,6 +476,28 @@ class PlanTests(unittest.TestCase):
         self.assertEqual(p["buys"][0]["confidence"], 0.65)
         self.assertIn("personal staple", p["buys"][0]["reason"])
 
+    def test_personal_best_flip_without_a_live_signal_is_reported_not_dropped(self) -> None:
+        personal = {
+            99: {
+                "name": "Known winner",
+                "round_trip": {
+                    "staple": True,
+                    "profitable_trips": 7,
+                    "net_profit": 100_000,
+                    "median_hours": 3,
+                    "median_gp_per_capital_hour": 20_000,
+                },
+            }
+        }
+        p = self._plan([], item=lambda i: None, personal=personal)
+
+        self.assertEqual(p["buys"], [])
+        self.assertEqual([row["id"] for row in p["skipped"]], [])
+        unevaluated = p["personal_unevaluated"]
+        self.assertEqual(len(unevaluated), 1)
+        self.assertEqual(unevaluated[0]["name"], "Known winner")
+        self.assertIn("no live signal", unevaluated[0]["reason"])
+
     def test_regime_high_skipped_without_boost(self) -> None:
         p = self._plan([_sig(1, 100, regime="high")])
         self.assertEqual(p["buys"], [])
