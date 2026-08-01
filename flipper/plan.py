@@ -4,7 +4,8 @@ predictions are all mechanical. The only LLM step in a session is `flipper.resea
 a small boost/avoid overlay that this planner consumes; see AGENTS.md.
 
 Pipeline:
-  1. scan() for live-low intraday candidates, then gate each on 12h backtest survival.
+  1. scan() for live-low intraday candidates, then gate each on a replay of the exact order it
+     would post — that price, that quantity — through recent non-overlapping entry/hold blocks.
   2. apply the research overlay: avoid drops a survivor; boost re-ranks survivors without
      bypassing the gate.
   3. triage the open offers you pass in (hold / reprice / cancel).
@@ -21,13 +22,13 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from collections import Counter
 from datetime import datetime, timedelta, timezone
 from typing import Mapping
 
 from . import execution_stats, ge_tax, runelite, signals
 
 MAX_SLOTS = 8                 # Members GE offer slots
-SURVIVAL_MIN_TRADES = 4       # backtest round-trips required to trust a pattern
 REPRICE_TOLERANCE = 0.02      # band drift past this fraction triggers a reprice verdict
 STALE_BUY_HOURS = 4           # an intraday entry that did not fill has missed its window
 STALE_SELL_HOURS = 6          # stale active sells should clear, not chase the sell band
@@ -39,8 +40,16 @@ TIME_OF_DAY_BUY_CANCEL_HOURS = 6
 # Liquid gp is the amount the user explicitly wants deployed this run, so the budget is all of
 # it. Leaving more than 1% unspent gets an explanation instead of silently under-deploying.
 DEPLOYMENT_SHORTFALL_PCT = 0.01
-MIN_FLIP_PROFIT_PCT = 0.0002  # a slot must net >= this fraction of net worth (backtested realized),
-                              # else it is too small to be worth the slot at this bankroll
+MIN_SLOT_PROFIT_GP = 1_000  # a slot must net at least this many coins (backtested realized) to be
+                            # worth typing in. Deliberately absolute, not a fraction of liquid:
+                            # a GE slot costs the same handful of clicks whether the player has
+                            # 10m or 1b, while the coins any one offer can earn are capped by the
+                            # item's buy limit and flow. Scaling this floor with the bankroll made
+                            # the plan shrink as the player got richer (identical basket 10m-100m,
+                            # nothing at all at 1b) without offering anything better in exchange.
+                            # Slots — not gp — are the scarce resource, and candidates are already
+                            # ranked by expected realized gp/hour, so whatever reaches a free slot
+                            # is the best remaining use of it. A floor here can only subtract.
 MIN_RETURN_PER_CAPITAL_HOUR = 0.0005  # a slot must also return >= 0.05%/hour on the gp it
                                       # commits to the round trip (0.6% per 12h hold) — the
                                       # opportunity cost of capital a later run could deploy
@@ -55,6 +64,23 @@ PATIENT_MIN_NET_MARGIN_GP = 10  # a patient flip's after-tax per-unit spread mus
                                 # phantom. Absolute coins only — low ROI with decent coins is fine.
 ACTIVE_HORIZON_MINUTES = 90
 ACTIVE_CANCEL_MINUTES = 30
+ACTIVE_MAX_LANE_DOWNSIDE_PCT = 0.05  # the whole active lane's replayed forced-exit downside must
+                                     # fit inside this fraction of liquid, shared across every
+                                     # active slot the run opens rather than allowed per position,
+                                     # so eight positions cannot each risk the per-position limit.
+                                     # At 0.01 the budget bound at every bankroll and the greedy
+                                     # allocator spent ~99% of it on the first one or two picks,
+                                     # starving the rest: deployment sat near 50% at every bank
+                                     # size and six of eight bankrolls chose a plan worse than one
+                                     # the planner itself produced at a different bankroll.
+# Per-position caps on what a replayed forced exit may cost, as a fraction of liquid. Relative, so
+# they mean the same thing to a 5m and a 1b bankroll. Unlike the active lane these are per position
+# rather than a shared budget, because a band lane's forced exit is a fraction of the spread rather
+# than the whole of it.
+# NOTE: the patient cap is 3.3x tighter than the time-of-day one despite the shorter hold. That
+# asymmetry has never been justified by a measurement and is worth revisiting.
+TIME_MAX_POSITION_DOWNSIDE_PCT = 0.01
+PATIENT_MAX_POSITION_DOWNSIDE_PCT = 0.003
 PLAN_HORIZONS = {"intraday", "overnight"}
 OVERNIGHT_FILL_WINDOW_HOURS = signals.MAX_HOLD_HOURS
 OVERNIGHT_AWAY_HOURS = 8      # away this long or more is the overnight horizon, not a short absence
@@ -97,24 +123,6 @@ def _normalize_strategies(
     return chosen
 
 
-def _survival(item_id: int) -> dict | None:
-    """Backtest under the honest time-stop. Returns None if it can't be trusted as a flip."""
-    bt = signals.backtest_signal(
-        item_id,
-        timestep=signals.EXECUTION_TIMESTEP,
-        max_hold_points=signals.MAX_HOLD_HOURS,
-    )
-    if not bt or bt.get("error"):
-        return None
-    if (
-        (bt.get("total_profit_per_unit") or 0) > 0
-        and (bt.get("trades") or 0) >= SURVIVAL_MIN_TRADES
-        and bt["median_hold_hours"] <= signals.MAX_HOLD_HOURS
-    ):
-        return bt
-    return None
-
-
 def _by_hours(hours: float = signals.MAX_HOLD_HOURS) -> str:
     return (
         datetime.now(timezone.utc) + timedelta(hours=hours)
@@ -130,7 +138,7 @@ def _deadline_due(value: str | None) -> bool:
         return False
 
 
-def _buy_row(sig: dict, bt: dict, qty: int, expected_profit: int,
+def _buy_row(sig: dict, band_evidence: dict, qty: int, expected_profit: int,
              execution_evidence: dict | None = None,
              staple: dict | None = None) -> dict:
     personal = ""
@@ -153,7 +161,7 @@ def _buy_row(sig: dict, bt: dict, qty: int, expected_profit: int,
         "horizon": "0-12h",
         "reason": (f"live low entry @ {sig['entry_price']} within {int(signals.BUY_QUANTILE*100)}th-pctile band; "
                    f"6h regime {sig['regime']['level']}; survives 12h reprice-to-clear "
-                   f"(+{bt['total_profit_per_unit']:,}/u over {bt['trades']} trips); "
+                   f"(+{band_evidence['total_profit_gp']:,}gp/block over {band_evidence['trades']} blocks); "
                    f"fillable ~{sig['fillable_qty']}/{int(sig['fill_window_hours'])}h"
                    f"{personal}{staple_note}"),
         "predicted": {"direction": "up", "target": sig["exit_price"],
@@ -166,7 +174,68 @@ def _buy_row(sig: dict, bt: dict, qty: int, expected_profit: int,
     }
 
 
+def _deployment_constraint(
+    out: dict,
+    planned_buys: list[dict],
+    free_slots: int,
+    *,
+    max_new_slots: int | None = None,
+    physical_free_slots: int,
+) -> str:
+    """Name what actually stopped the plan from using the rest of the liquid.
+
+    Idle gp with the binding constraint stated beats filling slots for the sake of the
+    percentage, but "some constraint applied" is not an answer the player can act on: they
+    can free a slot, they cannot conjure GE buy limits.
+    """
+    skipped = out["skipped"] + out["active_skipped"] + out["time_skipped"]
+    if free_slots <= 0:
+        # free_slots is min(physical open slots, --max-new-slots). Only blame the GE board
+        # when that cap was not tighter than the physical free count.
+        if max_new_slots is not None and physical_free_slots > max_new_slots:
+            return f"--max-new-slots {max_new_slots}"
+        return f"all {MAX_SLOTS} GE slots are committed"
+    if not planned_buys:
+        top = Counter(
+            row["reason"].split(" —")[0].split(" (")[0] for row in skipped
+        ).most_common(1)
+        detail = f": {top[0][0]} ({top[0][1]} items)" if top else ""
+        return f"no candidate cleared the evidence gates{detail}"
+    sizing_constraints = Counter(
+        row["constraint"] for row in skipped if row.get("constraint")
+    ).most_common(1)
+    if sizing_constraints:
+        constraint, count = sizing_constraints[0]
+        return (
+            f"{constraint} on {count} remaining candidate"
+            f"{'s' if count != 1 else ''}; GE buy limits and flow cap the "
+            f"{len(planned_buys)} selected items"
+        )
+    return (
+        f"GE buy limits and flow on the {len(planned_buys)} qualifying items; "
+        f"{len(skipped)} others failed evidence gates"
+    )
+
+
+def _worst_replay_loss_per_filled(sig: dict) -> int:
+    """Conservative loss per unit from the replay block with the worst total result."""
+    replay = sig.get("replay_evidence") or {}
+    worst_profit = replay.get("worst_profit_gp", 0)
+    worst_filled = replay.get("worst_filled_qty", 0)
+    if worst_profit >= 0 or worst_filled <= 0:
+        return 0
+    return max(1, (abs(worst_profit) + worst_filled - 1) // worst_filled)
+
+
 def _time_buy_row(sig: dict, qty: int, expected_profit: int) -> dict:
+    evidence_reason = (
+        f"UTC pattern {sig['entry_window_utc']} buy → "
+        f"{sig['exit_window_utc']} sell; newest holdout "
+        f"{sig['test']['win_rate']:.0%} wins over "
+        f"{sig['test']['trades']} samples, "
+        f"{sig['test']['median_profit_per_unit']:,}gp/u median after tax"
+    )
+    replay = sig["replay_evidence"]
     return {
         "id": sig["id"],
         "name": sig["name"],
@@ -180,11 +249,10 @@ def _time_buy_row(sig: dict, qty: int, expected_profit: int) -> dict:
         "live_high": sig.get("current_high"),
         "horizon": "6-24h",
         "reason": (
-            f"UTC pattern {sig['entry_window_utc']} buy → {sig['exit_window_utc']} sell; "
-            f"newest holdout {sig['test']['win_rate']:.0%} wins over "
-            f"{sig['test']['trades']} samples, "
-            f"{sig['test']['median_profit_per_unit']:,}gp/u median after tax; "
-            "sized to sell-side exit capacity/GE limit, cancel zero-fill after "
+            f"{evidence_reason}; current {sig['entry_price']:,}→{sig['exit_price']:,} "
+            f"order replay +{replay['mean_profit_gp']:,}gp/block over "
+            f"{replay['blocks']} blocks; "
+            "sized to expected fills and GE limit, cancel zero-fill after "
             f"{TIME_OF_DAY_BUY_CANCEL_HOURS}h"
         ),
         "predicted": {
@@ -200,6 +268,7 @@ def _time_buy_row(sig: dict, qty: int, expected_profit: int) -> dict:
             "hold_hours": sig["hold_hours"],
             "train": sig["train"],
             "test": sig["test"],
+            "order_replay": replay,
         },
     }
 
@@ -250,6 +319,19 @@ def _sell_fill_row(offer: dict, triage: dict) -> dict | None:
     reason = f"sell {qty} filled unit(s) after {triage['verdict']}ing the buy offer"
     if not offer.get("intent_id") and not offer.get("strategy"):
         reason += " — untracked buy, resale will not be strategy-graded"
+    # A strategy's hard exit is an absolute instant, not a per-offer stopwatch. Dropping it
+    # restarted the clock at sell placement, so a time-of-day buy filled late in its entry
+    # window could run a further 24h against a lane that hard-exits at 24h. A deadline that
+    # has already passed is an instruction to clear now, not a target to post and wait on:
+    # carrying it forward without acting would emit a sell at the band price due in the past.
+    hard_exit_at = offer.get("hard_exit_at")
+    overdue = _deadline_due(hard_exit_at)
+    if overdue:
+        # Clear now rather than posting the band target against a deadline in the past. The
+        # deadline stays attached: if this clear does not fill, the next run must still see
+        # the offer as overdue rather than restarting a 24h clock from sell placement.
+        price = _clear_price(price, _sane_bid(market)) or price
+        reason += f" — hard exit {hard_exit_at} has passed, clear at market {price}"
     return {
         "id": offer["id"],
         "name": triage.get("name") or (market or {}).get("name"),
@@ -263,7 +345,13 @@ def _sell_fill_row(offer: dict, triage: dict) -> dict | None:
         "live_high": (market or {}).get("current_high"),
         "horizon": "0-12h",
         "reason": reason,
-        "predicted": {"direction": "up", "target": price, "by": _by_hours()},
+        "predicted": {
+            "direction": "up", "target": price,
+            # Overdue means execute now, so the prediction says now — not a stale instant in
+            # the past, and not a fresh 12h window the strategy never granted.
+            "by": _by_hours(0) if overdue else (hard_exit_at or _by_hours()),
+        },
+        **({"hard_exit_at": hard_exit_at} if hard_exit_at else {}),
         "confidence": 0.40,
     }
 
@@ -823,9 +911,8 @@ def plan(cash: int, offers: list[dict] | None = None,
     cost_map = _cost_basis()
     strategy_by_item = _open_strategy_by_item(offers)
     personal_stats = _personal_execution_stats(fill_window_hours)
-    # Minimum worthwhile profit for a slot, scaled to the gp the user explicitly makes available.
-    # Backtested realized profit, not paper margin.
-    profit_floor = int(liquid * MIN_FLIP_PROFIT_PCT)
+    # Minimum worthwhile profit for a slot. Backtested realized profit, not paper margin.
+    profit_floor = MIN_SLOT_PROFIT_GP
 
     offer_triage = [_triage_offer(o, cost_map, strategy_by_item) for o in offers]
     projection = _project_after_triage(offers, offer_triage, liquid)
@@ -855,7 +942,8 @@ def plan(cash: int, offers: list[dict] | None = None,
         o["id"] for o, row in zip(offers, offer_triage)
         if row.get("verdict") in {"hold", "reprice"}
     }
-    free_slots = projection["free_slots"]
+    physical_free_slots = projection["free_slots"]
+    free_slots = physical_free_slots
     if max_new_slots is not None:
         free_slots = min(free_slots, max_new_slots)
     budget_left = projection["budget_left"]
@@ -892,6 +980,7 @@ def plan(cash: int, offers: list[dict] | None = None,
         patient_scan = signals.scan(
             seed_limit=seed_limit,
             limit=candidate_limit,
+            min_volume=1,
             fill_window_hours=fill_window_hours,
         )
         patient_candidates = _add_personal_candidates(patient_scan, personal_stats, fill_window_hours)
@@ -937,11 +1026,26 @@ def plan(cash: int, offers: list[dict] | None = None,
             out["skipped"].append({"id": iid, "name": sig["name"],
                                    "reason": "regime high — needs research thesis"})
             continue
-        bt = _survival(iid)
-        if not bt:
+        replay = sig.get("replay_evidence")
+        # The replayed order reduced to what ranking and the reason string need. median_hold_hours
+        # is the lane's fixed horizon rather than a measured value; it is here because the ranking
+        # key divides by it to compare patient, time-of-day and active candidates on gp per hour.
+        band_evidence = (
+            {
+                "avg_profit_per_unit": round(
+                    replay["mean_profit_gp"] / max(1, sig["fillable_qty"])
+                ),
+                "total_profit_gp": replay["mean_profit_gp"],
+                "trades": replay["blocks"],
+                "median_hold_hours": signals.MAX_HOLD_HOURS,
+            }
+            if replay and replay.get("qualifies")
+            else None
+        )
+        if not band_evidence:
             out["skipped"].append({"id": iid, "name": sig["name"], "reason": "fails survival gate"})
             continue
-        (survivors if strategy_group == "production" else probe_survivors).append((sig, bt))
+        (survivors if strategy_group == "production" else probe_survivors).append((sig, band_evidence))
 
     # Active high-value strategy: current after-tax spread probes, not percentile-band holds. Scanned
     # up-front so it competes for the same free slots as the patient/time strategies by expected realized
@@ -980,16 +1084,27 @@ def plan(cash: int, offers: list[dict] | None = None,
     allocations = [
         (
             sig["id"] not in boost,
-            -(bt["avg_profit_per_unit"] * sig["fillable_qty"]
-              / max(bt["median_hold_hours"], 1)),
+            # Demote patient candidates seeded below the normal volume floor: the patient scan
+            # widens its seed to min_volume=1, so thin items reach ranking that otherwise would
+            # not. The other two lanes pass False deliberately — time-of-day already seeds at
+            # SEED_MIN_VOLUME, and the active lane trades high-value items that are thin by
+            # nature, so demoting them by volume would demote the whole lane.
+            sig["vol_1h"] < signals.SEED_MIN_VOLUME,
+            -(band_evidence["avg_profit_per_unit"] * min(
+                sig["fillable_qty"],
+                (budget_left // sig["entry_price"])
+                if sig.get("entry_price") else 0,
+            )
+              / max(band_evidence["median_hold_hours"], 1)),
             "patient",
             sig,
-            bt,
+            band_evidence,
         )
-        for sig, bt in survivors
+        for sig, band_evidence in survivors
     ] + [
         (
             sig["id"] not in boost,
+            False,
             -sig["score"],
             "time-of-day",
             sig,
@@ -999,6 +1114,7 @@ def plan(cash: int, offers: list[dict] | None = None,
     ] + [
         (
             sig["id"] not in boost,
+            False,
             -(sig.get("expected_gp_per_hour") or 0),
             "active",
             sig,
@@ -1006,16 +1122,18 @@ def plan(cash: int, offers: list[dict] | None = None,
         )
         for sig in active_survivors
     ]
-    allocations.sort(key=lambda row: row[:2])
+    allocations.sort(key=lambda row: row[:3])
 
     # Validated patient, time-of-day, and active strategies compete for the free slots by expected
     # realized gp/hour.
     selected_ids = set()
-    for _, _, strategy_type, sig, bt in allocations:
+    active_downside_budget = int(liquid * ACTIVE_MAX_LANE_DOWNSIDE_PCT)
+    for _, _, _, strategy_type, sig, band_evidence in allocations:
         if free_slots <= 0:
             break
         if sig["id"] in selected_ids:
             continue
+        active_downside_cost = 0
         skip_target = (
             out["skipped"] if strategy_type == "patient"
             else out["active_skipped"] if strategy_type == "active"
@@ -1023,38 +1141,74 @@ def plan(cash: int, offers: list[dict] | None = None,
         )
         buy = sig["entry_price"] or 0
         evidence = None
-        # Order size may exceed the expected-fill estimate: a buy-side partial fill is
-        # nearly free (cancel next GE visit), so cheap items post up to what the sell side
-        # can absorb before the exit deadline. Expected profit stays anchored to expected
-        # fills so the floors and ranking never credit units that likely won't fill.
+        # Every lane sizes to the conservative expected-fill estimate, capped by budget and GE
+        # limit, so the floors and ranking never credit units that likely won't fill.
         if strategy_type == "patient":
             personal_fillable, evidence = execution_stats.adjusted_fillable_qty(
                 sig["id"], sig["fillable_qty"] or 0, personal_stats
             )
-            qty = min(max(personal_fillable, sig.get("exit_capacity_qty") or 0),
+            qty = min(personal_fillable,
                       (budget_left // buy) if buy else 0,
                       sig["ge_limit"] or 10**9)
+            worst_per_unit = _worst_replay_loss_per_filled(sig)
+            if worst_per_unit:
+                qty = min(
+                    qty,
+                    int(liquid * PATIENT_MAX_POSITION_DOWNSIDE_PCT)
+                    // worst_per_unit,
+                )
             expected_fill = min(qty, personal_fillable)
-            per_unit = bt["avg_profit_per_unit"]
+            per_unit = band_evidence["avg_profit_per_unit"]
             hold_hours = signals.MAX_HOLD_HOURS
         elif strategy_type == "active":
             # active scan already caps fillable_qty by GE limit and two-sided flow; a
             # high-value partial fill is not free, so no exit-capacity oversizing here.
-            qty = min(sig["fillable_qty"] or 0, (budget_left // buy) if buy else 0)
+            # Also cap the position by what crossing the current spread at the hard
+            # exit would lose. Expected value cannot make an oversized downside safe.
+            forced_exit_loss = sig.get("forced_exit_loss_per_unit") or 0
+            downside_qty = (
+                active_downside_budget // forced_exit_loss
+                if forced_exit_loss > 0 else sig["fillable_qty"] or 0
+            )
+            qty = min(
+                sig["fillable_qty"] or 0,
+                (budget_left // buy) if buy else 0,
+                downside_qty,
+            )
+            active_downside_cost = qty * forced_exit_loss
             expected_fill = qty
             per_unit = sig["expected_value_per_unit"]
             hold_hours = ACTIVE_HORIZON_MINUTES / 60
         else:  # time-of-day
-            qty = min(max(sig["fillable_qty"] or 0, sig.get("exit_capacity_qty") or 0),
+            qty = min(sig["fillable_qty"] or 0,
                       (budget_left // buy) if buy else 0,
                       sig["ge_limit"] or 10**9)
+            worst_per_unit = _worst_replay_loss_per_filled(sig)
+            if worst_per_unit:
+                qty = min(
+                    qty,
+                    int(liquid * TIME_MAX_POSITION_DOWNSIDE_PCT)
+                    // worst_per_unit,
+                )
             expected_fill = min(qty, sig["fillable_qty"] or 0)
             per_unit = sig["expected_profit_per_unit"]
             hold_hours = 24  # entry window + hold; the lane hard-exits by 24h
         expected_profit = int(per_unit * expected_fill)
         if qty <= 0:
-            skip_target.append({"id": sig["id"], "name": sig["name"],
-                                "reason": "no budget/liquidity for a slot"})
+            spent_lane_risk = strategy_type == "active" and downside_qty <= 0
+            skip_target.append({
+                "id": sig["id"], "name": sig["name"],
+                "reason": (
+                    f"active lane forced-exit risk budget spent "
+                    f"({active_downside_budget:,}gp remaining of "
+                    f"{int(liquid * ACTIVE_MAX_LANE_DOWNSIDE_PCT):,}gp)"
+                    if spent_lane_risk else "no budget/liquidity for a slot"
+                ),
+                "constraint": (
+                    "active lane forced-exit risk budget"
+                    if spent_lane_risk else "budget or expected fillability"
+                ),
+            })
             continue
         capital_floor = int(expected_fill * buy * hold_hours * MIN_RETURN_PER_CAPITAL_HOUR)
         required = max(profit_floor, capital_floor)
@@ -1065,16 +1219,18 @@ def plan(cash: int, offers: list[dict] | None = None,
                 "id": sig["id"], "name": sig["name"],
                 "reason": (f"expected profit {expected_profit:,}gp < "
                            f"floor {required:,}gp{locked}"),
+                "constraint": "profit and capital-return floors",
             })
             continue
         if strategy_type == "patient":
             staple = (personal_stats.get(sig["id"]) or {}).get("round_trip")
-            out["buys"].append(_buy_row(sig, bt, qty, expected_profit, evidence, staple))
+            out["buys"].append(_buy_row(sig, band_evidence, qty, expected_profit, evidence, staple))
         elif strategy_type == "active":
             out["active_buys"].append(_active_buy_row(sig, qty, expected_profit))
         else:
             out["time_buys"].append(_time_buy_row(sig, qty, expected_profit))
         budget_left -= qty * buy
+        active_downside_budget -= active_downside_cost
         free_slots -= 1
         selected_ids.add(sig["id"])
 
@@ -1086,7 +1242,7 @@ def plan(cash: int, offers: list[dict] | None = None,
         / max(sb[1]["median_hold_hours"], 1)
     ))
     probe_cap = min(int(liquid * PATIENT_PROBE_CAP_PCT), budget_left)
-    for sig, bt in probe_survivors:
+    for sig, band_evidence in probe_survivors:
         if free_slots <= 0:
             break
         buy = sig["entry_price"] or 0
@@ -1098,7 +1254,7 @@ def plan(cash: int, offers: list[dict] | None = None,
             probe_cap // buy if buy else 0,
             sig["ge_limit"] or 10**9,
         )
-        expected_profit = int(bt["avg_profit_per_unit"] * qty)
+        expected_profit = int(band_evidence["avg_profit_per_unit"] * qty)
         probe_required = max(profit_floor, int(
             qty * buy * signals.MAX_HOLD_HOURS * MIN_RETURN_PER_CAPITAL_HOUR
         ))
@@ -1109,6 +1265,10 @@ def plan(cash: int, offers: list[dict] | None = None,
                     "patient probe has no affordable/liquid quantity"
                     if qty <= 0 else
                     f"patient probe expected profit {expected_profit:,}gp < floor {probe_required:,}gp"
+                ),
+                "constraint": (
+                    "budget or expected fillability"
+                    if qty <= 0 else "profit and capital-return floors"
                 ),
             })
             continue
@@ -1127,8 +1287,8 @@ def plan(cash: int, offers: list[dict] | None = None,
             "reason": (
                 f"experimental patient bid at {sig['buy_band']:,}, "
                 f"{sig['distance_to_buy_pct']:.2f}% below latest instant-sell print; "
-                f"survives band backtest (+{bt['total_profit_per_unit']:,}/u over "
-                f"{bt['trades']} trips), but fill reachability is unvalidated; "
+                f"survives band backtest (+{band_evidence['total_profit_gp']:,}gp/block over "
+                f"{band_evidence['trades']} blocks), but fill reachability is unvalidated; "
                 f"cancel zero-fill after {STALE_BUY_HOURS}h"
             ),
             "predicted": {"direction": "up", "target": sig["exit_price"], "by": _by_hours()},
@@ -1170,8 +1330,14 @@ def plan(cash: int, offers: list[dict] | None = None,
         "unspent_gp": unspent,
         "utilization_pct": round(utilization * 100, 1),
         "constraint": (
-            None if unspent <= int(available * DEPLOYMENT_SHORTFALL_PCT) else
-            "eligible fillability, profit floor, budget, or slot constraints"
+            None if unspent <= int(available * DEPLOYMENT_SHORTFALL_PCT)
+            else _deployment_constraint(
+                out,
+                planned_buys,
+                free_slots,
+                max_new_slots=max_new_slots,
+                physical_free_slots=physical_free_slots,
+            )
         ),
     }
     return out
@@ -1186,9 +1352,11 @@ def _render_md(p: dict) -> str:
     if deployment:
         held = deployment.get("held_buy_gp") or 0
         held_note = f" · {held:,}gp already escrowed in held buys" if held else ""
+        constraint = deployment.get("constraint")
         L.append(
             f"deployment {deployment['utilization_pct']:.1f}% "
             f"({deployment['unspent_gp']:,}gp unspent{held_note})"
+            + (f" — limited by {constraint}" if constraint else "")
         )
     rows = _action_rows(p)
     if rows:

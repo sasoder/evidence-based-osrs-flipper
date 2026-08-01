@@ -7,6 +7,8 @@ __pycache__/
 
 # network response cache (TTL'd, regenerated on demand)
 data/cache/
+# dated snapshots of that cache, kept locally to replay a past market
+data/archives/
 
 # RuneLite runtime snapshots are local inputs, never committed
 data/incoming/flipping/
@@ -18,9 +20,6 @@ config/settings.json
 # runtime state lives on this machine, not in the repo
 state/
 overlay.json
-
-# generated planner evaluation runs; curated baselines are checked in separately
-evaluation/results/
 
 # engine-local files
 .claude/settings.local.json
