@@ -17,8 +17,7 @@ Inspired by Leverage In Action's
 
 ## Getting started
 
-You need Python 3.11+ and a coding agent, unless you want to use the CLI yourself. Clone the repo
-with Git to keep the repo up to date easily, or download the ZIP to get started without it. The examples use
+You need Python 3.11+ and a coding agent like [Claude](https://claude.com/download) or [ChatGPT](https://openai.com/index/introducing-the-codex-app/), unless you want to use the CLI yourself. Clone the repo with Git to keep the repo up to date easily, or download the ZIP to get started without it. The examples use
 [uv](https://docs.astral.sh/uv/). If you already manage Python with venv or conda, run the same
 commands with `python` instead of `uv run python`.
 
