@@ -100,8 +100,8 @@ Your exports and local state stay on disk and out of git:
 
 ## Why "Evidence"?
 
-Evidence is my RSN, the suggestions are evidence-based, and OSRS Flipper says exactly what the
-tool is for. A week of following the calls on around 85m liquid returned about 16m, which would
+Evidence is my RSN, the suggestions are evidence-based, and the rest of the name describes what
+it does. A week of following the calls on around 85m liquid returned about 16m, which would
 look more impressive if I wasn't poor.
 
 <p align="center">
