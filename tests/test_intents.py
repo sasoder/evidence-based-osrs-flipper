@@ -8,7 +8,7 @@ from pathlib import Path
 from flipper import intents
 
 class IntentTests(unittest.TestCase):
-    def test_intents_from_plan_are_exact_offer_signatures(self) -> None:
+    def test_intents_from_plan_include_order_identity_and_intended_price(self) -> None:
         plan_json = {
             "generated_at": "2026-06-27T12:00:00+00:00",
             "buys": [{

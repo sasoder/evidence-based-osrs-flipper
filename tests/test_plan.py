@@ -489,7 +489,7 @@ class PlanTests(unittest.TestCase):
         self.assertEqual(p["buys"][0]["confidence"], 0.65)
         self.assertIn("personal staple", p["buys"][0]["reason"])
 
-    def test_personal_best_flip_without_a_live_signal_is_reported_not_dropped(self) -> None:
+    def test_personal_best_flip_diagnostic_is_retained_but_rendered_only_on_request(self) -> None:
         personal = {
             99: {
                 "name": "Known winner",
@@ -511,9 +511,15 @@ class PlanTests(unittest.TestCase):
         self.assertEqual(unevaluated[0]["name"], "Known winner")
         self.assertEqual(unevaluated[0]["blocked_by"]["code"], "test_no_signal")
         self.assertIn("no live signal", unevaluated[0]["blocked_by"]["reason"])
-        md = plan._render_md(p)
-        self.assertIn("## Not evaluated", md)
-        self.assertIn("- Known winner: no live signal", md)
+        standard_md = plan._render_md(p)
+        self.assertNotIn("Known winner", standard_md)
+
+        historical_md = plan._render_md(p, report_personal_history=True)
+        self.assertIn(
+            "## Historical items that didn't clear today's checks",
+            historical_md,
+        )
+        self.assertIn("- Known winner: no live signal", historical_md)
 
     def test_regime_high_skipped_without_boost(self) -> None:
         p = self._plan([_sig(1, 100, regime="high")])
@@ -1062,10 +1068,15 @@ class PlanTests(unittest.TestCase):
 
         self.assertIn("## Actions", md)
         self.assertIn(
-            "| action | item | qty | price | capital | exp. profit | live lo/hi | sell target | deadline | reason |",
+            "| action | item | qty | price | capital | exp. profit | live lo/hi | sell target | deadline | basis |",
             md,
         )
-        self.assertIn("| **buy** | item1 | 10 | 100 | 1,000 | 1,000 | 100/200 | 200 |", md)
+        self.assertIn(
+            "| **buy** | item1 | 10 | 100 | 1,000 | 1,000 | 100/200 | 200 |",
+            md,
+        )
+        self.assertIn("patient, cancel zero-fill after 4h", md)
+        self.assertNotIn(p["buys"][0]["reason"], md)
         self.assertNotIn("## Buy", md)
 
     def test_stale_sell_reprices_down_to_market(self) -> None:

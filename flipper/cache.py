@@ -1,6 +1,6 @@
 """Tiny TTL'd disk cache for network responses.
 
-Every tool runs as its own short-lived ``uv run python -m ...`` process, so the
+Every tool runs as its own short-lived ``python -m ...`` process, so the
 in-process ``lru_cache`` on the prices client dies at exit. Within one on-demand session the
 agent invokes several tools, each of which would otherwise re-download the same 1.1MB item mapping
 and the universe-wide latest/1h blobs. This persists responses to ``data/cache/`` with a

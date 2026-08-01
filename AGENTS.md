@@ -10,7 +10,8 @@ of truth for the workflow, planner commands, sizing rules, and presentation cont
 duplicate it elsewhere: `.agents/skills/` is the canonical skill location, and tool-specific
 copies (e.g. `.claude/skills/`) are thin pointers back to it.
 
-Python managed with `uv`. Run tests with:
+Prefer `uv` for Python commands when it is available. Any activated Python 3.11+ environment is
+also supported; in that case omit `uv run`. Run tests with:
 
 ```bash
 uv run python -m unittest
