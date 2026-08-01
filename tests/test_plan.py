@@ -1345,3 +1345,44 @@ class BankrollMonotonicityTests(unittest.TestCase):
         costs = [self._cost(plans[cash]) for cash in self.BANKS]
         for small, big in zip(costs, costs[1:]):
             self.assertGreaterEqual(big, small)
+
+
+class PartiallyFilledStaleBuyTests(unittest.TestCase):
+    """A buy that filled some units then stopped must release the remainder and list what
+    it holds. Gating the staleness cancel on filled_qty <= 0 made a partly filled buy
+    immortal, stranding bought units inside an offer that would never complete
+    (the Black mask (10) 2-of-3 incident, 2026-08-01)."""
+
+    def _sig(self) -> dict:
+        return {
+            "name": "Black mask (10)",
+            "regime": {"level": "low", "reason": "stable_recent_distribution"},
+            "entry_price": 1_365_002, "buy_band": 1_365_002, "exit_price": 1_434_044,
+            "current_low": 1_370_012, "current_high": 1_434_044,
+            "price_fresh": True, "ready_to_buy": True, "ready_to_sell": True,
+        }
+
+    def _buy(self, *, filled_qty: int, last_fill_age_hours: float | None) -> dict:
+        return {"id": 8901, "side": "buy", "qty": 3, "price": 1_365_002,
+                "age_hours": 5.0, "filled_qty": filled_qty, "state": "ACTIVE",
+                "last_fill_age_hours": last_fill_age_hours}
+
+    def test_partly_filled_buy_that_stopped_filling_is_cancelled(self) -> None:
+        res = plan._decide_triage(
+            self._buy(filled_qty=2, last_fill_age_hours=4.5), self._sig(), self._sig())
+        self.assertEqual(res["verdict"], "cancel")
+        self.assertIn("sell the 2 filled unit(s)", res["note"])
+
+    def test_partly_filled_buy_still_filling_is_held(self) -> None:
+        res = plan._decide_triage(
+            self._buy(filled_qty=2, last_fill_age_hours=0.6), self._sig(), self._sig())
+        self.assertEqual(res["verdict"], "hold")
+
+    def test_cancelled_partial_buy_produces_a_sell_row_for_the_filled_units(self) -> None:
+        offer = self._buy(filled_qty=2, last_fill_age_hours=4.5)
+        triage = {"verdict": "cancel", "name": "Black mask (10)"}
+        with patch.object(signals, "item_signal", return_value=self._sig()):
+            row = plan._sell_fill_row(offer, triage)
+        self.assertIsNotNone(row)
+        self.assertEqual(row["qty"], 2)
+        self.assertEqual(row["price"], 1_434_044)

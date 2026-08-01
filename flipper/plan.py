@@ -783,9 +783,16 @@ def _decide_triage(offer: dict, sig: dict | None, quote: dict | None,
     price = offer.get("price") or 0
     if side == "buy" and regime_high:
         return {**base, "verdict": "cancel", "note": f"regime high ({sig['regime']['reason']}) — free the slot"}
-    if side == "buy" and age_known and age_hours >= STALE_BUY_HOURS and filled_qty <= 0:
+    # Staleness is measured from the last fill, so a partly filled buy that has stopped
+    # filling is stale too. Cancelling releases the unfilled escrow and, because the
+    # projection builds a sell row for any cancelled buy holding units, lists what did
+    # fill instead of stranding it inside an offer that will never complete.
+    if side == "buy" and age_known and idle_hours >= STALE_BUY_HOURS:
         return {**base, "verdict": "cancel",
-                "note": f"stale {age_hours:g}h with no fills — entry window expired"}
+                "note": (f"stale {age_hours:g}h with no fills — entry window expired"
+                         if filled_qty <= 0 else
+                         f"no fills for {idle_hours:g}h — cancel the unfilled remainder and "
+                         f"sell the {int(filled_qty)} filled unit(s)")}
     if (
         side == "buy"
         and strategy != "patient-probe"
