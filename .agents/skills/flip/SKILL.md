@@ -83,6 +83,12 @@ uv run python -m flipper.plan --cash <liquid_gp> \
     --strategies patient,active --max-new-slots 3 --write-intents --markdown
 ```
 
+When the user explicitly asks about their usual, historical, staple, previously successful, or
+previously well-performing items, also pass `--report-personal-history`. This adds a Markdown
+section for historical candidates that did not clear today's checks. Do not pass it for an
+ordinary plan; personal FU evidence may still widen and size the candidate pool without adding
+diagnostic noise to the result.
+
 Strategy and slot preferences are planner constraints, not LLM discretion. Do not add or remove rows
 by hand after the planner returns. For overnight requests, run `flipper.plan --horizon overnight
 --seed-limit 0 --time-seed-limit 0`; this excludes active-margin calls before sizing and intent

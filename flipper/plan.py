@@ -1390,7 +1390,7 @@ def plan(cash: int, offers: list[dict] | None = None,
     return out
 
 
-def _render_md(p: dict) -> str:
+def _render_md(p: dict, *, report_personal_history: bool = False) -> str:
     new_offers = (
         p['slots']['new_buys'] + p['slots']['patient_probes']
         + p['slots']['active_buys'] + p['slots']['time_buys']
@@ -1443,9 +1443,9 @@ def _render_md(p: dict) -> str:
                 f"{_fmt_live(r)} | "
                 f"{_fmt(r['sell_target'])} | {_fmt(r['deadline'])} | {_fmt(r['basis'])} |"
             )
-    unevaluated = p.get("personal_unevaluated", [])
+    unevaluated = p.get("personal_unevaluated", []) if report_personal_history else []
     if unevaluated:
-        L += ["", "## Not evaluated"]
+        L += ["", "## Historical items that didn't clear today's checks"]
         for row in unevaluated:
             L.append(f"- {_fmt(row['name'])}: {_fmt(row['blocked_by']['reason'])}")
     return "\n".join(L)
@@ -1490,6 +1490,11 @@ def _main(argv: list[str]) -> int:
                     help="maximum number of new buy offers to recommend after checking open offers")
     ap.add_argument("--write-intents", action="store_true",
                     help="write pending FU intent tags for new recommendations")
+    ap.add_argument(
+        "--report-personal-history",
+        action="store_true",
+        help="include historical FU items that did not clear today's checks in Markdown",
+    )
     ap.add_argument("--markdown", action="store_true")
     args = ap.parse_args(argv)
 
@@ -1522,7 +1527,10 @@ def _main(argv: list[str]) -> int:
 
         written = intents.write_intents(intents.intents_from_plan(p))
         p["intent_queue"] = {"path": str(written)}
-    print(_render_md(p) if args.markdown else json.dumps(p, indent=2))
+    print(
+        _render_md(p, report_personal_history=args.report_personal_history)
+        if args.markdown else json.dumps(p, indent=2)
+    )
     return 0
 
 

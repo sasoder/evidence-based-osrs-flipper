@@ -103,6 +103,7 @@ uv run python -m flipper.plan --cash 50000000 --strategies active --max-new-slot
 - `--max-new-slots <n>`: cap new offers after checking current offers.
 - `--horizon overnight`: drop keyboard-dependent strategies and size for 12h away.
 - `--write-intents`: queue order identities, intended prices, and evidence for the plugin fork.
+- `--report-personal-history`: show historical FU items that did not clear today's checks.
 
 ## Runtime data
 
