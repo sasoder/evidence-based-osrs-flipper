@@ -1062,10 +1062,15 @@ class PlanTests(unittest.TestCase):
 
         self.assertIn("## Actions", md)
         self.assertIn(
-            "| action | item | qty | price | capital | exp. profit | live lo/hi | sell target | deadline | reason |",
+            "| action | item | qty | price | capital | exp. profit | live lo/hi | sell target | deadline | basis |",
             md,
         )
-        self.assertIn("| **buy** | item1 | 10 | 100 | 1,000 | 1,000 | 100/200 | 200 |", md)
+        self.assertIn(
+            "| **buy** | item1 | 10 | 100 | 1,000 | 1,000 | 100/200 | 200 |",
+            md,
+        )
+        self.assertIn("patient, cancel zero-fill after 4h", md)
+        self.assertNotIn(p["buys"][0]["reason"], md)
         self.assertNotIn("## Buy", md)
 
     def test_stale_sell_reprices_down_to_market(self) -> None:

@@ -7,6 +7,8 @@ description: Run an on-demand OSRS GE flipping planning session. Use when the us
 
 The engine-agnostic runtime workflow for a flip planning session. The output of a session is
 exact GE instructions the user executes manually in-game. Read `README.md` for setup.
+Commands below use the recommended `uv` runner. If setup selected an activated Python 3.11+
+environment instead, omit `uv run`.
 
 ## Runtime workflow (a planning session)
 
@@ -56,7 +58,7 @@ request never overrides a previously stated absence.
 Refresh RuneLite exports before reading offers:
 
 ```bash
-scripts/runelite-sync.sh
+uv run python -m flipper.sync
 uv run python -m flipper.runelite offers
 ```
 
@@ -108,12 +110,13 @@ the strategy gate.
   the row's live lo/hi, break-even, and quantified alternatives. "Untracked offer" means the
   outcome won't be strategy-graded — the advice still applies in full; never present an
   untracked row as "not my problem".
-- `--write-intents` writes the thin pending queue consumed by the FU fork. It contains only
-  exact offer signatures plus strategy/reason/prediction tags; FU remains authoritative for
-  whether the offer was placed, filled, cancelled, and profitable.
+- `--write-intents` writes the thin pending queue consumed by the FU fork. It contains the
+  item/side/quantity order identity, intended price, and strategy/reason/prediction tags; FU
+  remains authoritative for whether the offer was placed, filled, cancelled, and profitable.
 - Do not ask the user to confirm that they placed the offers. The FU fork observes matching
   manual offers from the current-slot export and trade history. Ask only when a later run sees
-  stale/missing FU data or an observed offer does not match the exact intent.
+  stale/missing FU data or an observed offer remains untagged. A different price alone is not a
+  mismatch.
 - Never write intents for actions you tell the user to skip. If a row is unsafe for the stated
   horizon, the planner invocation is wrong; rerun with the correct horizon rather than filtering
   the markdown by hand.
@@ -141,9 +144,10 @@ in this repo.
 The only repo-side trade memory should be thin planner intent: item, side, qty, limit price,
 strategy label, reason, horizon, and falsifiable prediction. Intent labels explain why an offer
 was suggested; they are not the transaction database and never override FU fills.
-After writing intents, do not ask the user to confirm placed offers. The FU fork should observe exact
-manual offers and remove matching pending intents; ask only when FU data is stale/missing or the
-observed offer differs from the exact signature.
+After writing intents, do not ask the user to confirm placed offers. The FU fork identifies manual
+offers by item, side, and quantity and removes the matching pending intent. Price differences do not
+prevent tagging; when otherwise identical intents are pending, intended price breaks the tie. Ask
+only when FU data is stale/missing or the observed offer remains untagged.
 
 Long-term holds are out of scope for the day-to-day `/flip` loop. If the user wants a thesis note
 for a non-trading position, write it as a simple note/report, not as state that blocks normal
@@ -156,8 +160,9 @@ prediction (direction + target + by-date), confidence, and a thin intent record.
 state a reason and a prediction, don't recommend it.
 
 **Every order is exact:** one item, one side, one integer quantity, one limit price — never a
-range. Exactness is what lets FU/plugin tags or the intent matcher attach the strategy label to
-the actual offer. Vague orders can't be evaluated.
+range. This makes the recommendation executable and its outcome measurable. The plugin's matching
+contract is narrower: item, side, and quantity identify the order, while price differences do not
+prevent the strategy label from attaching. Vague recommendations still can't be evaluated.
 
 ## Selection is the edge — strategy-specific gates
 

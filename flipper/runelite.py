@@ -1,4 +1,4 @@
-"""Ingest RuneLite exports that arrive (via git) in data/incoming/.
+"""Ingest RuneLite exports mirrored by ``flipper.sync`` into data/incoming/.
 
 Inputs produced by RuneLite on the trading machine:
 

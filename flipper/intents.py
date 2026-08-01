@@ -1,7 +1,8 @@
 """Write the thin pending-intent queue consumed by the Flipping Utilities fork.
 
-It records only the exact offer signatures the plugin needs to tag the next
-matching RuneLite offer event, then the plugin removes the matched line.
+Item, side and quantity identify the next matching RuneLite offer. The intended
+price breaks ties between otherwise identical pending orders but does not prevent
+the plugin from tagging an offer placed at a different price.
 """
 
 from __future__ import annotations

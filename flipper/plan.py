@@ -434,6 +434,7 @@ def _action_rows(p: dict) -> list[dict]:
         price = o.get("new_price") if action == "reprice" else o.get("price")
         add(
             strategy="open-offer",
+            basis=f"open offer, {action}",
             action=action,
             item=o.get("name"),
             side=o.get("side"),
@@ -450,6 +451,7 @@ def _action_rows(p: dict) -> list[dict]:
     for b in p.get("sell_fills", []):
         add(
             strategy="sell-fill",
+            basis="sell fill, list filled units",
             action="sell",
             item=b.get("name"),
             side="sell",
@@ -470,8 +472,17 @@ def _action_rows(p: dict) -> list[dict]:
         ("active_buys", "active"),
     ):
         for b in p.get(section, []):
+            basis = {
+                "patient": f"patient, cancel zero-fill after {STALE_BUY_HOURS}h",
+                "probe": f"probe, cancel zero-fill after {STALE_BUY_HOURS}h",
+                "time-of-day": (
+                    f"time-of-day, cancel zero-fill after {TIME_OF_DAY_BUY_CANCEL_HOURS}h"
+                ),
+                "active": f"active, cancel unfilled after {ACTIVE_CANCEL_MINUTES}m",
+            }[strategy]
             add(
                 strategy=strategy,
+                basis=basis,
                 action=b.get("action"),
                 item=b.get("name"),
                 side=b.get("action"),
@@ -1416,7 +1427,7 @@ def _render_md(p: dict) -> str:
         L += [
             "",
             "## Actions",
-            "| action | item | qty | price | capital | exp. profit | live lo/hi | sell target | deadline | reason |",
+            "| action | item | qty | price | capital | exp. profit | live lo/hi | sell target | deadline | basis |",
             "|---|---|---:|---:|---:|---:|---:|---:|---|---|",
         ]
         for r in rows:
@@ -1430,7 +1441,7 @@ def _render_md(p: dict) -> str:
                 f"{_fmt(r['qty'])} | {_fmt(r['price'])} | "
                 f"{_fmt(r.get('capital'))} | {_fmt(r.get('expected_profit'))} | "
                 f"{_fmt_live(r)} | "
-                f"{_fmt(r['sell_target'])} | {_fmt(r['deadline'])} | {_fmt(r['reason'])} |"
+                f"{_fmt(r['sell_target'])} | {_fmt(r['deadline'])} | {_fmt(r['basis'])} |"
             )
     unevaluated = p.get("personal_unevaluated", [])
     if unevaluated:

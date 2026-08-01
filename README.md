@@ -17,16 +17,20 @@ Inspired by Leverage In Action's
 
 ## Getting started
 
-You need Git, [uv](https://docs.astral.sh/uv/) and a coding agent unless you want to use the CLI directly.
+You need Git, Python 3.11+, and a coding agent unless you want to use the CLI directly.
+[uv](https://docs.astral.sh/uv/) is the recommended Python runner, but any activated Python
+3.11+ environment works — omit `uv run` from the commands below when using one.
 
-1. **Clone and install**
+1. **Clone**
   ```bash
-   git clone git@github.com:sasoder/evidence-based-osrs-flipper.git
+   git clone https://github.com/sasoder/evidence-based-osrs-flipper.git
    cd evidence-based-osrs-flipper
-   uv sync
   ```
-2. **Install the RuneLite plugin fork** —
-  [sasoder/rl-plugin](https://github.com/sasoder/rl-plugin). The stock Flipping Utilities doesn't export current GE slots or consume intent tags, and without those the planner can't see your open offers or connect fills back to its calls. Build and install it, then enable auto-save (1 minute interval) and "Export current GE slots" (the fork's [Evidence-Based OSRS Flipper integration](https://github.com/sasoder/rl-plugin#evidence-based-osrs-flipper-integration) section has screenshots of both settings).
+2. **Run the RuneLite plugin fork** —
+  [sasoder/rl-plugin](https://github.com/sasoder/rl-plugin). Remove the Plugin Hub version of
+  Flipping Utilities, then start the fork with its development runner; a client started normally
+  through the RuneLite or Jagex Launcher will not load it. Enable the plugin, one-minute auto-save,
+  and "Export current GE slots." The fork README owns the build, launch, and Jagex-account details.
 3. **Open the repo in your agent and run `/setup`.** It checks that the
   plugin is exporting data, then asks only for the OSRS Wiki contact, your RSN (if you have more
   than one RuneLite profile), and any subreddits you want the optional research pass to read.
@@ -49,13 +53,16 @@ If your message doesn't include the numbers, the agent asks: liquid GP, whether 
 around, which strategies, and slot cap. A plan looks like this:
 
 
-| action | item             | qty | price   | capital   | exp. profit | live lo/hi      | sell target | deadline  | reason                                   |
-| ------ | ---------------- | --- | ------- | --------- | ----------- | --------------- | ----------- | --------- | ---------------------------------------- |
-| buy    | Topaz amulet (u) | 439 | 3,153   | 1,384,167 | 29,852      | 3,153/3,300     | 3,293       | 19:43 UTC | time-of-day; cancel zero-fill after 6h   |
-| buy    | Granite maul     | 4   | 149,001 | 596,004   | 12,856      | 149,000/156,501 | 156,500     | 21:13 UTC | active margin; cancel unfilled after 30m |
+| action | item             | qty | price   | capital   | exp. profit | live lo/hi      | sell target | deadline  | basis                                  |
+| ------ | ---------------- | --- | ------- | --------- | ----------- | --------------- | ----------- | --------- | -------------------------------------- |
+| buy    | Topaz amulet (u) | 439 | 3,153   | 1,384,167 | 29,852      | 3,153/3,300     | 3,293       | 19:43 UTC | time-of-day, cancel zero-fill after 6h |
+| buy    | Granite maul     | 4   | 149,001 | 596,004   | 12,856      | 149,000/156,501 | 156,500     | 21:13 UTC | active, cancel unfilled after 30m      |
 
 
-Every row includes the latest instant-sell/instant-buy prices (`live lo/hi`) plus the gp the offer commits (`capital`) and its expected after-tax profit, so you can sanity check the call before placing it.
+Every row includes the latest instant-sell/instant-buy prices (`live lo/hi`), the gp the offer
+commits (`capital`), its expected after-tax profit, and a compact basis for the action, so you can
+sanity check the call before placing it. The full evidence remains attached to the intent for later
+grading.
 
 ## How it decides
 
@@ -76,7 +83,12 @@ Each strategy has its own checks:
 
 Items compete for free slots by expected realized gp/hour from that replayed evidence, not just the live spread. Quantity is capped by GE limit, expected fills, budget, and (for patient/time) per-position downside; active shares one lane-wide downside budget. Each slot must clear a flat 1,000gp profit floor and a capital-return floor. When filters leave liquid unspent, the plan names the binding constraint instead of inventing weak fills.
 
-Each call is written as an intent (item, side, quantity, price, strategy, reason, prediction). Place that exact offer and the plugin fork will tag it. Later runs grade the call against your real fills. Items with a strong personal FU history can be pulled in as candidates and sized with your fill evidence, but they still have to pass the same gates.
+Each call is written as an intent (item, side, quantity, intended price, strategy, reason,
+prediction). The plugin identifies the offer by item, side, and quantity; changing the price does
+not prevent tagging. The planner still gives one concrete price so the call is executable and its
+outcome can be evaluated. Later runs grade the call against your real fills. Items with a strong
+personal FU history can be pulled in as candidates and sized with your fill evidence, but they
+still have to pass the same gates.
 
 ## CLI
 
@@ -90,7 +102,7 @@ uv run python -m flipper.plan --cash 50000000 --strategies active --max-new-slot
 - `--strategies patient,active,time,probe`: enabled strategies, or presets like `balanced` and `conservative`.
 - `--max-new-slots <n>`: cap new offers after checking current offers.
 - `--horizon overnight`: drop keyboard-dependent strategies and size for 12h away.
-- `--write-intents`: queue exact offer signatures for the plugin fork to tag.
+- `--write-intents`: queue order identities, intended prices, and evidence for the plugin fork.
 
 ## Runtime data
 
