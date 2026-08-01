@@ -101,8 +101,9 @@ Your exports and local state stay on disk and out of git:
 ## Why "Evidence"?
 
 Evidence is my RSN, the suggestions are evidence-based, and the rest of the name describes what
-it does. A week of following the calls on around 85m liquid returned about 16m, which would
-look more impressive if I wasn't poor.
+it does. A week of following the calls on around 85m liquid returned about 16m, mostly between
+Sailing sessions and whenever I got around to the GE, which would look more impressive if I
+wasn't poor.
 
 <p align="center">
   <img src="images/profit-week.png" alt="Flipping Utilities weekly profit graph showing about 16m profit" height="220">
