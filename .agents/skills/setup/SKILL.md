@@ -13,10 +13,11 @@ not pre-create them.
 
 ### 1. Dependencies
 
-Require Git and Python 3.11+. Prefer `uv` when it is already available: run `uv sync` and use
-`uv run python` for the commands below. Do not make installing uv a blocker; an activated Python
-3.11+ environment has everything this dependency-free project needs, so use `python` directly.
-Run the suite with the selected interpreter:
+Require Python 3.11+. Git is preferred, but do not block setup when the user downloaded the repo
+as a ZIP. Prefer `uv` when it is already available: run `uv sync` and use `uv run python` for the
+commands below. Do not make installing uv a blocker; an activated Python 3.11+ environment has
+everything this dependency-free project needs, so use `python` directly. Run the suite with the
+selected interpreter:
 
 ```bash
 uv run python -m unittest
@@ -36,12 +37,13 @@ uv run python -m flipper.runelite offers
 With the game open, offers (or `[]` when every slot is empty) should print. If fresh exports
 already exist, do not reinstall or relaunch anything.
 
-If the fork is not installed, offer to guide and perform the deterministic setup steps: check Git
-and a suitable Java runtime, clone the fork into a sibling or user-selected directory, and start
-its Gradle `runPlugin` task. Do not use `~/.runelite/sideloaded-plugins`: the supported path is the
-development client started by the fork's runner, not a jar loaded by a normal RuneLite or Jagex
-Launcher client. A Jagex account needs the one-time credential handoff described by the fork;
-authentication and enabling the plugin remain interactive user steps.
+If the fork is not installed, offer to guide and perform the setup steps. Check for a suitable Java
+runtime, then clone the fork with Git when available or download and unzip it when Git is absent.
+Put it in a sibling or user-selected directory and start its Gradle `runPlugin` task. Do not use
+`~/.runelite/sideloaded-plugins`: the supported path is the development client started by the
+fork's runner, not a jar loaded by a normal RuneLite or Jagex Launcher client. A Jagex account
+needs the one-time credential handoff described by the fork; authentication and enabling the
+plugin remain interactive user steps.
 
 Remove the Plugin Hub copy of Flipping Utilities before starting the fork. In the development
 client, ensure the fork itself is enabled, then enable one-minute auto-save and "Export current GE

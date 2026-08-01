@@ -17,25 +17,29 @@ Inspired by Leverage In Action's
 
 ## Getting started
 
-You need Git, Python 3.11+, and a coding agent unless you want to use the CLI directly.
-[uv](https://docs.astral.sh/uv/) is the recommended Python runner, but any activated Python
-3.11+ environment works — omit `uv run` from the commands below when using one.
+You need Python 3.11+ and a coding agent, unless you want to use the CLI yourself. Git is the
+nicest way to keep the repo up to date, but downloading it as a ZIP works fine too.
+[uv](https://docs.astral.sh/uv/) is recommended, but a regular virtual environment or conda
+environment works too. In that case, use `python` wherever the examples use `uv run python`.
 
-1. **Clone**
+1. **Get the repo** (clone it, or [download it as a ZIP](https://github.com/sasoder/evidence-based-osrs-flipper/archive/refs/heads/main.zip) and unzip it)
   ```bash
    git clone https://github.com/sasoder/evidence-based-osrs-flipper.git
    cd evidence-based-osrs-flipper
   ```
-2. **Run the RuneLite plugin fork** —
-  [sasoder/rl-plugin](https://github.com/sasoder/rl-plugin). Remove the Plugin Hub version of
-  Flipping Utilities, then start the fork with its development runner; a client started normally
-  through the RuneLite or Jagex Launcher will not load it. Enable the plugin, one-minute auto-save,
-  and "Export current GE slots." The fork README owns the build, launch, and Jagex-account details.
-3. **Open the repo in your agent and run `/setup`.** It checks that the
-  plugin is exporting data, then asks only for the OSRS Wiki contact, your RSN (if you have more
-  than one RuneLite profile), and any subreddits you want the optional research pass to read.
-  Answers go into gitignored `config/settings.json`. With one profile and no Reddit sources, no
-  config is needed at all.
+2. **Set up the [RuneLite plugin fork](https://github.com/sasoder/rl-plugin) yourself (recommended).**
+  The full workflow needs this version of Flipping Utilities so it can see your current GE slots
+  and tag the offers it suggests. Remove the Plugin Hub version, then follow the fork README to
+  build and run it. A normal RuneLite or Jagex Launcher client will not load the fork. Once it is
+  running, enable the plugin, set auto-save to one minute, and turn on "Export current GE slots."
+  If you'd rather have your agent help with this, skip to step 3.
+3. **Open the repo in your agent and run `/setup`.** It checks Python and the RuneLite connection.
+  If you skipped step 2, tell it you need help setting up the plugin fork. It can handle the clone,
+  build, and launch steps, although you will still need to log in and enable the plugin settings
+  yourself. Once everything is connected, setup asks for your OSRS Wiki contact, your RSN if it
+  finds more than one RuneLite profile, and any subreddits you want the optional research pass to
+  read. It saves those answers in gitignored `config/settings.json`. With one profile and no Reddit
+  sources, you do not need a config file at all.
 
 Then just talk to it: *"50m liquid, what should I buy?"*
 
@@ -60,9 +64,9 @@ around, which strategies, and slot cap. A plan looks like this:
 
 
 Every row includes the latest instant-sell/instant-buy prices (`live lo/hi`), the gp the offer
-commits (`capital`), its expected after-tax profit, and a compact basis for the action, so you can
-sanity check the call before placing it. The full evidence remains attached to the intent for later
-grading.
+commits (`capital`), and its expected after-tax profit. The short `basis` column keeps the table
+readable. The longer explanation is still saved with the intent, so later runs do not lose the
+reasoning behind the call.
 
 ## How it decides
 
@@ -83,12 +87,12 @@ Each strategy has its own checks:
 
 Items compete for free slots by expected realized gp/hour from that replayed evidence, not just the live spread. Quantity is capped by GE limit, expected fills, budget, and (for patient/time) per-position downside; active shares one lane-wide downside budget. Each slot must clear a flat 1,000gp profit floor and a capital-return floor. When filters leave liquid unspent, the plan names the binding constraint instead of inventing weak fills.
 
-Each call is written as an intent (item, side, quantity, intended price, strategy, reason,
-prediction). The plugin identifies the offer by item, side, and quantity; changing the price does
-not prevent tagging. The planner still gives one concrete price so the call is executable and its
-outcome can be evaluated. Later runs grade the call against your real fills. Items with a strong
-personal FU history can be pulled in as candidates and sized with your fill evidence, but they
-still have to pass the same gates.
+Each call is also saved as an intent with its item, side, quantity, intended price, strategy,
+reason, and prediction. The plugin matches the item, side, and quantity, so changing the price will
+not stop it from tagging the offer. The planner still gives you one concrete price because the call
+needs to be something you can actually place and measure. Later runs grade it against your real
+fills. Items that have worked well for you before can join the candidate pool and use your own fill
+history for sizing, but they still have to pass the same checks as everything else.
 
 ## CLI
 
