@@ -230,8 +230,12 @@ liquidity, budget, or slot gates.
 - Never spend beyond the manually reported liquid gp; never invent low-quality trades to fill
   slots. If the planner uses fewer offers than requested, state the blocking constraint and next
   step (wait, reduce liquid GP, or accept fewer/lower-confidence slots).
-- Treat `ready_to_buy=false`, `price_fresh=false`, `blocked_by`, or `regime.level=high` as a
-  reason to wait unless research gives a clear thesis.
+- Cancelled-buy refunds and collected-sale proceeds are reported but not automatically added to
+  this run's budget. Redeploy them only after the user authorizes a larger `--cash` on a new run.
+- A `personal_unevaluated[].blocked_by` diagnostic or `price_fresh=false` means wait; research
+  cannot repair missing data or a non-positive spread. `ready_to_buy=false` excludes a production
+  patient buy, though `patient_probe_ready=true` may still admit the separate probe strategy.
+  `regime.level=high` requires an explicit research boost before the deterministic gate admits it.
 
 ## Data discipline
 

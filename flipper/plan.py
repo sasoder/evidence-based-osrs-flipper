@@ -312,7 +312,7 @@ def _sell_fill_row(offer: dict, triage: dict) -> dict | None:
     qty = int(_num(offer.get("filled_qty")))
     if qty <= 0:
         return None
-    market = signals.item_signal(offer["id"]) or signals.live_quote(offer["id"])
+    market = signals.item_signal(offer["id"])["signal"] or signals.live_quote(offer["id"])
     price = (market or {}).get("exit_price") or _sane_bid(market)
     if not price:
         raise ValueError(f"cannot price filled buy for resale: {offer}")
@@ -374,14 +374,16 @@ def _project_after_triage(offers: list[dict], triage: list[dict], budget: int) -
                 released_buy_gp += unfilled_gp
             elif offer.get("side") == "sell" and filled > 0:
                 # Filled-but-uncollected sell proceeds become cash the moment the
-                # plan's own collect/cancel instruction is executed, so they are
-                # spendable this run just like a cancelled buy's escrow refund.
+                # plan's own collect/cancel instruction is executed. Record them for
+                # the user without silently expanding this run's authorized budget.
                 released_sell_gp += ge_tax.net_sale_price(
                     offer["id"], row.get("name") or "", price
                 ) * filled
             sell = _sell_fill_row(offer, row)
             if sell:
                 sell_fills.append(sell)
+                # Replacing the released buy with a sell consumes the same GE slot.
+                free_slots -= 1
             continue
 
         free_slots -= 1
@@ -390,7 +392,10 @@ def _project_after_triage(offers: list[dict], triage: list[dict], budget: int) -
 
     return {
         "free_slots": max(0, free_slots),
-        "budget_left": budget + released_buy_gp + released_sell_gp,
+        # --cash is the complete amount authorized for new buys this run. Refunds and
+        # sale proceeds are reported below, but require a rerun with a larger --cash
+        # before the planner may redeploy them.
+        "budget_left": budget,
         "released_buy_gp": released_buy_gp,
         "released_sell_gp": released_sell_gp,
         "locked_buy_gp": locked_buy_gp,
@@ -637,7 +642,7 @@ def _open_strategy_by_item(offers: list[dict]) -> dict[int, dict]:
 def _triage_offer(offer: dict, cost_map: dict[int, int] | None = None,
                   strategy_by_item: Mapping[int, dict] | None = None) -> dict:
     """hold / reprice / cancel verdict for one open GE offer, vs the current band."""
-    sig = signals.item_signal(offer["id"])
+    sig = signals.item_signal(offer["id"])["signal"]
     quote = sig or signals.live_quote(offer["id"])
     cost = (cost_map or {}).get(offer["id"])
     strategy_context = (strategy_by_item or {}).get(offer.get("slot", offer["id"])) or {}
@@ -871,15 +876,19 @@ def _add_personal_candidates(rows: list[dict], stats: dict[int, dict],
     for iid in _personal_candidate_ids(stats):
         if iid in seen:
             continue
-        sig = signals.item_signal(iid, fill_window_hours=fill_window_hours)
+        evaluation = signals.item_signal(
+            iid, fill_window_hours=fill_window_hours
+        )
+        sig = evaluation["signal"]
         if sig:
             out.append(sig)
             seen.add(iid)
         else:
+            blocked_by = evaluation["blocked_by"]
             unevaluated.append({
                 "id": iid,
                 "name": (stats.get(iid) or {}).get("name") or f"item_{iid}",
-                "reason": "no live signal — not evaluated against today's market",
+                "blocked_by": blocked_by,
             })
     out.sort(key=lambda row: row["score"], reverse=True)
     return out, unevaluated
@@ -925,7 +934,9 @@ def plan(cash: int, offers: list[dict] | None = None,
     boost = {b["id"] for b in overlay.get("boost", [])}
     avoid = {a["id"] for a in overlay.get("avoid", [])}
 
-    liquid = cash
+    # One authorization governs spending, percentage caps, and deployment reporting.
+    # Triage may reveal more cash, but only a later run with a larger --cash may use it.
+    run_budget = cash
     fill_window_hours = (
         OVERNIGHT_FILL_WINDOW_HOURS if horizon == "overnight" else signals.FILL_WINDOW_HOURS
     )
@@ -936,10 +947,10 @@ def plan(cash: int, offers: list[dict] | None = None,
     profit_floor = MIN_SLOT_PROFIT_GP
 
     offer_triage = [_triage_offer(o, cost_map, strategy_by_item) for o in offers]
-    projection = _project_after_triage(offers, offer_triage, liquid)
+    projection = _project_after_triage(offers, offer_triage, run_budget)
     out: dict = {
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        "inputs": {"liquid_gp": liquid,
+        "inputs": {"liquid_gp": run_budget,
                    "open_offers": len(offers),
                    "profit_floor_gp": profit_floor,
                    "horizon": horizon,
@@ -1152,7 +1163,7 @@ def plan(cash: int, offers: list[dict] | None = None,
     # Validated patient, time-of-day, and active strategies compete for the free slots by expected
     # realized gp/hour.
     selected_ids = set()
-    active_downside_budget = int(liquid * ACTIVE_MAX_LANE_DOWNSIDE_PCT)
+    active_downside_budget = int(run_budget * ACTIVE_MAX_LANE_DOWNSIDE_PCT)
     for _, _, _, strategy_type, sig, band_evidence in allocations:
         if free_slots <= 0:
             break
@@ -1179,7 +1190,7 @@ def plan(cash: int, offers: list[dict] | None = None,
             if worst_per_unit:
                 qty = min(
                     qty,
-                    int(liquid * PATIENT_MAX_POSITION_DOWNSIDE_PCT)
+                    int(run_budget * PATIENT_MAX_POSITION_DOWNSIDE_PCT)
                     // worst_per_unit,
                 )
             expected_fill = min(qty, personal_fillable)
@@ -1212,7 +1223,7 @@ def plan(cash: int, offers: list[dict] | None = None,
             if worst_per_unit:
                 qty = min(
                     qty,
-                    int(liquid * TIME_MAX_POSITION_DOWNSIDE_PCT)
+                    int(run_budget * TIME_MAX_POSITION_DOWNSIDE_PCT)
                     // worst_per_unit,
                 )
             expected_fill = min(qty, sig["fillable_qty"] or 0)
@@ -1226,7 +1237,7 @@ def plan(cash: int, offers: list[dict] | None = None,
                 "reason": (
                     f"active lane forced-exit risk budget spent "
                     f"({active_downside_budget:,}gp remaining of "
-                    f"{int(liquid * ACTIVE_MAX_LANE_DOWNSIDE_PCT):,}gp)"
+                    f"{int(run_budget * ACTIVE_MAX_LANE_DOWNSIDE_PCT):,}gp)"
                     if spent_lane_risk else "no budget/liquidity for a slot"
                 ),
                 "constraint": (
@@ -1266,7 +1277,7 @@ def plan(cash: int, offers: list[dict] | None = None,
         sb[1]["avg_profit_per_unit"] * sb[0]["fillable_qty"]
         / max(sb[1]["median_hold_hours"], 1)
     ))
-    probe_cap = min(int(liquid * PATIENT_PROBE_CAP_PCT), budget_left)
+    probe_cap = min(int(run_budget * PATIENT_PROBE_CAP_PCT), budget_left)
     for sig, band_evidence in probe_survivors:
         if free_slots <= 0:
             break
@@ -1329,6 +1340,9 @@ def plan(cash: int, offers: list[dict] | None = None,
     out["slots"] = {
         "max": MAX_SLOTS,
         "open_offers": len(offers),
+        "retained_open_offers": sum(
+            row.get("verdict") in {"hold", "reprice"} for row in offer_triage
+        ),
         "new_buys": len(out["buys"]),
         "patient_probes": len(out["patient_probes"]),
         "active_buys": len(out["active_buys"]),
@@ -1339,23 +1353,20 @@ def plan(cash: int, offers: list[dict] | None = None,
     out["budget_left_gp"] = budget_left
     planned_buys = out["buys"] + out["patient_probes"] + out["active_buys"] + out["time_buys"]
     planned_buy_gp = sum(b["qty"] * b["price"] for b in planned_buys)
-    # Utilization measures this run's planned buys against the gp actually available to
-    # place them: fresh liquid plus whatever this plan's own instructions free (cancelled
-    # buy escrow refunds, collected sell proceeds). Gp escrowed in *held* open buys was
-    # spent by a previous run, so it is reported separately, never counted as deployment
-    # of today's liquid (which pushed the percentage past 100%).
-    available = liquid + projection["released_buy_gp"] + projection["released_sell_gp"]
-    utilization = planned_buy_gp / available if available else 0
-    unspent = max(0, available - planned_buy_gp)
+    # --cash is both the spend cap and the deployment denominator. Money released by
+    # this plan's triage instructions was not part of the user's stated liquid amount,
+    # so report it separately and require explicit authorization before redeploying it.
+    utilization = planned_buy_gp / run_budget if run_budget else 0
+    unspent = max(0, run_budget - planned_buy_gp)
     out["deployment"] = {
         "planned_gp": planned_buy_gp,
         "planned_buy_gp": planned_buy_gp,
-        "available_gp": available,
+        "run_budget_gp": run_budget,
         "held_buy_gp": projection["locked_buy_gp"],
         "unspent_gp": unspent,
         "utilization_pct": round(utilization * 100, 1),
         "constraint": (
-            None if unspent <= int(available * DEPLOYMENT_SHORTFALL_PCT)
+            None if unspent <= int(run_budget * DEPLOYMENT_SHORTFALL_PCT)
             else _deployment_constraint(
                 out,
                 planned_buys,
@@ -1369,10 +1380,15 @@ def plan(cash: int, offers: list[dict] | None = None,
 
 
 def _render_md(p: dict) -> str:
+    new_offers = (
+        p['slots']['new_buys'] + p['slots']['patient_probes']
+        + p['slots']['active_buys'] + p['slots']['time_buys']
+        + len(p['sell_fills'])
+    )
     L = [f"# Plan — {p['generated_at']}",
          f"liquid {p['inputs']['liquid_gp']:,}gp (manual) · "
-         f"slots {p['slots']['new_buys']+p['slots']['patient_probes']+p['slots']['active_buys']+p['slots']['time_buys']}"
-         f"+{p['slots']['open_offers']} used / {p['slots']['max']}"]
+         f"slots {new_offers}+{p['slots']['retained_open_offers']} "
+         f"used / {p['slots']['max']}"]
     deployment = p.get("deployment")
     if deployment:
         held = deployment.get("held_buy_gp") or 0
@@ -1383,6 +1399,18 @@ def _render_md(p: dict) -> str:
             f"({deployment['unspent_gp']:,}gp unspent{held_note})"
             + (f" — limited by {constraint}" if constraint else "")
         )
+        released_buy = p["projection"]["released_buy_gp"]
+        released_sell = p["projection"]["released_sell_gp"]
+        if released_buy or released_sell:
+            sources = []
+            if released_buy:
+                sources.append(f"{released_buy:,}gp buy escrow refunded")
+            if released_sell:
+                sources.append(f"{released_sell:,}gp sale proceeds collected")
+            L.append(
+                "released this run: " + " · ".join(sources)
+                + " — not redeployed; rerun with higher --cash to use it"
+            )
     rows = _action_rows(p)
     if rows:
         L += [
@@ -1404,6 +1432,11 @@ def _render_md(p: dict) -> str:
                 f"{_fmt_live(r)} | "
                 f"{_fmt(r['sell_target'])} | {_fmt(r['deadline'])} | {_fmt(r['reason'])} |"
             )
+    unevaluated = p.get("personal_unevaluated", [])
+    if unevaluated:
+        L += ["", "## Not evaluated"]
+        for row in unevaluated:
+            L.append(f"- {_fmt(row['name'])}: {_fmt(row['blocked_by']['reason'])}")
     return "\n".join(L)
 
 

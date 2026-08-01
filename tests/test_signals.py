@@ -56,6 +56,67 @@ def _rows(n: int = 80) -> list[dict]:
 
 
 class SignalTests(unittest.TestCase):
+    def test_item_signal_explains_missing_mapping(self) -> None:
+        with patch("flipper.prices.mapping_by_id", return_value={}):
+            evaluation = signals.item_signal(1)
+
+        self.assertIsNone(evaluation["signal"])
+        self.assertEqual(evaluation["blocked_by"]["code"], "mapping_missing")
+
+    def test_item_evaluation_explains_insufficient_history(self) -> None:
+        with (
+            patch("flipper.prices.mapping_by_id",
+                  return_value={1: {"id": 1, "name": "Thin item", "limit": 100}}),
+            patch("flipper.prices.timeseries", return_value=_rows(19)),
+        ):
+            evaluation = signals.item_signal(1)
+
+        blocked = evaluation["blocked_by"]
+        self.assertEqual(blocked["code"], "insufficient_history")
+        self.assertEqual(blocked["required_observations"], 20)
+        self.assertEqual(blocked["usable_observations"]["execution_lows"], 19)
+
+    def test_item_evaluation_distinguishes_band_margin_rejection(self) -> None:
+        now = int(time.time())
+        flat = _rows()
+        for row in flat:
+            row["avgLowPrice"] = 200
+            row["avgHighPrice"] = 200
+        with (
+            patch("flipper.prices.mapping_by_id",
+                  return_value={1: {"id": 1, "name": "Flat item", "limit": 100}}),
+            patch("flipper.prices.timeseries", return_value=flat),
+            patch("flipper.prices.latest", return_value={
+                "1": {"low": 200, "high": 200, "lowTime": now, "highTime": now}
+            }),
+        ):
+            evaluation = signals.item_signal(1)
+
+        blocked = evaluation["blocked_by"]
+        self.assertEqual(blocked["code"], "band_margin_non_positive")
+        self.assertIn("historical band spread", blocked["reason"])
+        self.assertGreater(blocked["shortfall_gp_per_unit"], 0)
+
+    def test_item_evaluation_distinguishes_live_executable_margin_rejection(self) -> None:
+        now = int(time.time())
+        with (
+            patch("flipper.prices.mapping_by_id",
+                  return_value={1: {"id": 1, "name": "Crossed item", "limit": 100}}),
+            patch("flipper.prices.timeseries", return_value=_rows()),
+            patch("flipper.prices.latest", return_value={
+                "1": {"low": 102, "high": 103, "lowTime": now, "highTime": now}
+            }),
+            patch("flipper.prices.one_hour", return_value={
+                "1": {"lowPriceVolume": 100, "highPriceVolume": 100}
+            }),
+        ):
+            evaluation = signals.item_signal(1)
+
+        blocked = evaluation["blocked_by"]
+        self.assertEqual(blocked["code"], "executable_margin_non_positive")
+        self.assertIn("live executable spread", blocked["reason"])
+        self.assertGreaterEqual(blocked["shortfall_gp_per_unit"], 0)
+
     def test_fillable_qty_uses_thinner_side_volume(self) -> None:
         volume = {"low": 1000, "high": 10, "total": 1010}
 
@@ -66,7 +127,9 @@ class SignalTests(unittest.TestCase):
         with (
             patch("flipper.signals.prices.margins", return_value=[{"id": 1, "score": 1}]) as margins,
             patch("flipper.signals.prices.prefetch_timeseries") as prefetch,
-            patch("flipper.signals.item_signal", return_value={"id": 1, "score": 1}) as item_signal,
+            patch("flipper.signals.item_signal", return_value={
+                "signal": {"id": 1, "score": 1}, "blocked_by": None,
+            }) as item_signal,
         ):
             rows = signals.scan(seed_limit=0, limit=None, fill_window_hours=12)
 
@@ -92,7 +155,7 @@ class SignalTests(unittest.TestCase):
             patch("flipper.prices.latest", return_value=latest),
             patch("flipper.prices.one_hour", return_value={"1": {"lowPriceVolume": 100, "highPriceVolume": 100}}),
         ):
-            signal = signals.item_signal(1)
+            signal = signals.item_signal(1)["signal"]
 
         self.assertIsNotNone(signal)
         assert signal is not None
@@ -111,7 +174,7 @@ class SignalTests(unittest.TestCase):
                 "1": {"lowPriceVolume": 100, "highPriceVolume": 100}
             }),
         ):
-            signal = signals.item_signal(1)
+            signal = signals.item_signal(1)["signal"]
 
         assert signal is not None
         self.assertEqual(signal["buy_band"], 100)
@@ -319,7 +382,7 @@ class SignalTests(unittest.TestCase):
                 "1": {"lowPriceVolume": 100, "highPriceVolume": 100}
             }),
         ):
-            signal = signals.item_signal(1)
+            signal = signals.item_signal(1)["signal"]
 
         assert signal is not None
         self.assertFalse(signal["ready_to_buy"])
@@ -342,7 +405,7 @@ class SignalTests(unittest.TestCase):
                 "1": {"lowPriceVolume": 100, "highPriceVolume": 100}
             }),
         ):
-            signal = signals.item_signal(1)
+            signal = signals.item_signal(1)["signal"]
 
         assert signal is not None
         self.assertEqual(signal["buy_band"], 100)
@@ -366,7 +429,7 @@ class SignalTests(unittest.TestCase):
                 "1": {"lowPriceVolume": 100, "highPriceVolume": 100}
             }),
         ):
-            signal = signals.item_signal(1)
+            signal = signals.item_signal(1)["signal"]
 
         assert signal is not None
         self.assertFalse(signal["ready_to_buy"])
@@ -709,7 +772,7 @@ class TrendTests(unittest.TestCase):
             patch("flipper.prices.latest", return_value={"1": {"low": 1780, "high": 1820, "lowTime": now, "highTime": now}}),
             patch("flipper.prices.one_hour", return_value={"1": {"lowPriceVolume": 100, "highPriceVolume": 100}}),
         ):
-            signal = signals.item_signal(1)
+            signal = signals.item_signal(1)["signal"]
 
         assert signal is not None
         self.assertEqual(signal["trend"]["direction"], "down")
@@ -724,7 +787,7 @@ class TrendTests(unittest.TestCase):
             patch("flipper.prices.latest", return_value={"1": {"low": 1925, "high": 2075, "lowTime": now, "highTime": now}}),
             patch("flipper.prices.one_hour", return_value={"1": {"lowPriceVolume": 100, "highPriceVolume": 100}}),
         ):
-            signal = signals.item_signal(1)
+            signal = signals.item_signal(1)["signal"]
 
         assert signal is not None
         self.assertEqual(signal["trend"]["direction"], "flat")
@@ -822,7 +885,10 @@ class CrashGuardTests(unittest.TestCase):
                 "1": {"lowPriceVolume": 800, "highPriceVolume": 0}
             }),
         ):
-            self.assertIsNone(signals.item_signal(1, timestep="6h"))
+            evaluation = signals.item_signal(1, timestep="6h")
+
+        self.assertIsNone(evaluation["signal"])
+        self.assertEqual(evaluation["blocked_by"]["code"], "band_margin_non_positive")
 
     def test_item_signal_grades_the_crash_high_risk_with_a_realistic_exit(self) -> None:
         now = int(time.time())
@@ -838,7 +904,7 @@ class CrashGuardTests(unittest.TestCase):
                 "1": {"lowPriceVolume": 800, "highPriceVolume": 400}
             }),
         ):
-            signal = signals.item_signal(1, timestep="6h")
+            signal = signals.item_signal(1, timestep="6h")["signal"]
 
         assert signal is not None
         self.assertEqual(signal["regime"]["level"], "high")

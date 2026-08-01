@@ -512,6 +512,20 @@ SELL_QUANTILE = 0.75
 PATIENT_PROBE_MAX_DISTANCE_PCT = 3.0
 
 
+def _blocked_item_signal(item_id: int, name: str | None, code: str,
+                         reason: str, **details) -> dict:
+    return {
+        "signal": None,
+        "blocked_by": {
+            "code": code,
+            "reason": reason,
+            "item_id": item_id,
+            **({"name": name} if name else {}),
+            **details,
+        },
+    }
+
+
 def item_signal(
     item_id: int,
     timestep: str = EXECUTION_TIMESTEP,
@@ -519,10 +533,18 @@ def item_signal(
     buy_quantile: float = BUY_QUANTILE,
     participation_rate: float = 0.10,
     fill_window_hours: float = FILL_WINDOW_HOURS,
-) -> dict | None:
+) -> dict:
+    """Return either a complete patient signal or a structured rejection.
+
+    Callers must inspect ``signal`` before consuming it. Rejections carry a stable
+    ``blocked_by`` code, explanation, and the measurements available at the gate.
+    """
     meta = prices.mapping_by_id().get(item_id)
     if not meta:
-        return None
+        return _blocked_item_signal(
+            item_id, None, "mapping_missing",
+            "item is missing from the price mapping",
+        )
 
     rows = prices.timeseries(item_id, timestep)
     regime_timestep = REGIME_TIMESTEP
@@ -537,8 +559,20 @@ def item_signal(
     lows = [r["avgLowPrice"] for r in rows if r.get("avgLowPrice")]
     regime_highs = [r["avgHighPrice"] for r in regime_rows if r.get("avgHighPrice")]
     regime_lows = [r["avgLowPrice"] for r in regime_rows if r.get("avgLowPrice")]
-    if min(len(highs), len(lows), len(regime_highs), len(regime_lows)) < 20:
-        return None
+    usable_counts = {
+        "execution_highs": len(highs),
+        "execution_lows": len(lows),
+        "regime_highs": len(regime_highs),
+        "regime_lows": len(regime_lows),
+    }
+    if min(usable_counts.values()) < 20:
+        shortest = min(usable_counts.values())
+        return _blocked_item_signal(
+            item_id, meta["name"], "insufficient_history",
+            f"only {shortest} usable price observations; need 20 on every required series",
+            required_observations=20,
+            usable_observations=usable_counts,
+        )
 
     sell_band_full = percentile(highs, sell_quantile)
     target_buy = percentile(lows, buy_quantile)
@@ -576,7 +610,16 @@ def item_signal(
     buy_price = current_low if at_band else target_buy
     band_margin = target_sell - buy_price - tax(target_sell)
     if band_margin <= 0:
-        return None
+        return _blocked_item_signal(
+            item_id, meta["name"], "band_margin_non_positive",
+            f"historical band spread is {-band_margin:,}gp/u short of covering tax"
+            if band_margin < 0 else
+            "historical band spread only covers tax; no after-tax margin remains",
+            entry_price=buy_price,
+            exit_price=target_sell,
+            after_tax_margin_gp_per_unit=band_margin,
+            shortfall_gp_per_unit=max(0, -band_margin),
+        )
     volume_1h = _volume_1h(item_id)
     fillable_qty = _fillable_qty(ge_limit, volume_1h, fill_window_hours, participation_rate)
     distance_to_sell_pct = (
@@ -613,7 +656,16 @@ def item_signal(
         executable_exit - executable_entry - tax(executable_exit)
     )
     if executable_margin <= 0:
-        return None
+        return _blocked_item_signal(
+            item_id, meta["name"], "executable_margin_non_positive",
+            f"live executable spread is {-executable_margin:,}gp/u short of covering tax"
+            if executable_margin < 0 else
+            "live executable spread only covers tax; no after-tax margin remains",
+            entry_price=executable_entry,
+            exit_price=executable_exit,
+            after_tax_margin_gp_per_unit=executable_margin,
+            shortfall_gp_per_unit=max(0, -executable_margin),
+        )
     margin_limit = executable_margin * ge_limit if ge_limit else None
     liquidity_profit = executable_margin * fillable_qty
     capital_required = executable_entry * fillable_qty
@@ -650,7 +702,7 @@ def item_signal(
     score = round(score_base * uniformity_avg * uniformity_equivalence *
                   observation_factor * regime_factor * readiness_factor)
 
-    return {
+    signal = {
         "id": item_id,
         "name": meta["name"],
         "timestep": timestep,
@@ -694,6 +746,7 @@ def item_signal(
         "score": score,
         "replay_evidence": replay,
     }
+    return {"signal": signal, "blocked_by": None}
 
 
 def scan(seed_limit: int | None = 40, limit: int | None = 20, min_volume: int = SEED_MIN_VOLUME,
@@ -704,7 +757,9 @@ def scan(seed_limit: int | None = 40, limit: int | None = 20, min_volume: int = 
     prices.prefetch_timeseries([s["id"] for s in seeds], (timestep, REGIME_TIMESTEP))
     rows = []
     for seed in seeds:
-        signal = item_signal(seed["id"], timestep=timestep, fill_window_hours=fill_window_hours)
+        signal = item_signal(
+            seed["id"], timestep=timestep, fill_window_hours=fill_window_hours
+        )["signal"]
         if signal:
             rows.append(signal)
     rows.sort(key=lambda r: r["score"], reverse=True)
