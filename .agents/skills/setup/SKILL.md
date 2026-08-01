@@ -9,6 +9,10 @@ Goal: dependencies installed, RuneLite exports flowing, and a config only if the
 infer something. Directories, caches, and state files are all created on demand at runtime — do
 not pre-create them.
 
+Run all non-interactive setup and verification commands yourself. Do not ask the user to activate
+a Python environment, paste Python commands, or inspect command output. For interactive steps,
+tell them what to do and ask them to reply when they are finished, then continue the checks yourself.
+
 ## Steps
 
 ### 1. Dependencies
@@ -37,8 +41,9 @@ uv run python -m flipper.runelite offers
 With the game open, offers (or `[]` when every slot is empty) should print. If fresh exports
 already exist, do not reinstall or relaunch anything.
 
-If the fork is not installed, offer to guide and perform the setup steps. Check for a suitable Java
-runtime, then clone the fork with Git when available or download and unzip it when Git is absent.
+If the fork is not installed, handle the non-interactive setup steps and guide the user through the
+rest. Check for a suitable Java runtime, then clone the fork with Git when available or download
+and unzip it when Git is absent.
 Put it in a sibling or user-selected directory and start its Gradle `runPlugin` task. Do not use
 `~/.runelite/sideloaded-plugins`: the supported path is the development client started by the
 fork's runner, not a jar loaded by a normal RuneLite or Jagex Launcher client. A Jagex account
