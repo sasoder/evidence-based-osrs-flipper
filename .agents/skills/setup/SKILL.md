@@ -45,6 +45,10 @@ fork's runner, not a jar loaded by a normal RuneLite or Jagex Launcher client. A
 needs the one-time credential handoff described by the fork; authentication and enabling the
 plugin remain interactive user steps.
 
+If the user needs to start the client themselves, say where to paste the commands. On Windows,
+tell them to open PowerShell and use the actual Windows path with `cd`, followed by
+`.\gradlew.bat runPlugin`; do not give them Git Bash paths such as `/c/Users/...`.
+
 Remove the Plugin Hub copy of Flipping Utilities before starting the fork. In the development
 client, ensure the fork itself is enabled, then enable one-minute auto-save and "Export current GE
 slots." Diagnose a failure from the first broken link:
