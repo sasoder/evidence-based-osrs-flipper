@@ -3,7 +3,7 @@ from __future__ import annotations
 import io
 import unittest
 from contextlib import redirect_stderr
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from unittest.mock import patch
 
 from flipper import intents, plan, signals
@@ -869,15 +869,21 @@ class PlanTests(unittest.TestCase):
         # A time-of-day buy carries an absolute deadline. Converting the filled units into a
         # sell must not restart the clock: dropping it let a lane that hard-exits at 24h run
         # a further 24h from sell placement.
+        # Derived, not a literal: a hardcoded date puts the deadline in the past once the
+        # wall clock passes it, silently flipping this test onto the overdue branch it is
+        # not testing.
+        deadline = (
+            datetime.now(timezone.utc) + timedelta(hours=6)
+        ).isoformat(timespec="minutes")
         sig = {**_sig(1, 100, entry_price=100, exit_price=200), "ready_to_buy": False}
         offers = [{"id": 1, "side": "buy", "qty": 10, "filled_qty": 4, "price": 100,
                    "age_hours": 7, "strategy": "time-of-day",
-                   "hard_exit_at": "2026-08-01T12:00+00:00"}]
+                   "hard_exit_at": deadline}]
         p = self._plan([], item=lambda i: sig, offers=offers)
 
         sell = p["sell_fills"][0]
-        self.assertEqual(sell["hard_exit_at"], "2026-08-01T12:00+00:00")
-        self.assertEqual(sell["predicted"]["by"], "2026-08-01T12:00+00:00")
+        self.assertEqual(sell["hard_exit_at"], deadline)
+        self.assertEqual(sell["predicted"]["by"], deadline)
 
     def test_sell_fill_clears_at_market_when_the_hard_exit_already_passed(self) -> None:
         # Carrying the deadline forward is not enough on its own: a deadline in the past is an
