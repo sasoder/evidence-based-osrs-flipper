@@ -162,34 +162,37 @@ the actual offer. Vague orders can't be evaluated.
 ## Selection is the edge — strategy-specific gates
 
 A fat paper margin usually means the item has a wide range because it is *trending down*, not
-oscillating. Execution bands use 1h data; the broader regime guard uses 6h data. `flipper.plan`
-runs the patient-band backtest gate internally before recommending a buy. Reject any candidate
-that is not at a fresh live-low entry, is not net-positive (`total_profit_per_unit > 0`) with
-enough round-trips (`trades >= 4`) under that gate. Rank survivors by expected realized gp/hour,
-not paper margin.
+oscillating. Execution bands use 1h data; the broader regime guard uses 6h data when enough of it
+exists. `flipper.plan` replays the exact executable patient order through recent non-overlapping
+entry/hold blocks, with touch capacity, capital reservation, and forced exits. Production requires
+a fresh live low no more than 2.5% above the buy band, at least three replay blocks and two distinct
+entry episodes, positive replay utility, and a non-high regime. Rank survivors by expected realized
+gp/hour, not paper margin.
 
-Near-band bids that have not actually traded at the buy band are never promoted into the normal
-strategy. They may enter a separate **`flip-patient-probe`** experiment only when the live instant-sell
-print is within 3% above the band, the normal survival/regime gates pass, and expected realized
-profit clears the slot floor. This strategy uses at most 5% of liquid across all probe offers. It
-exists to gather real fill evidence; its distance rule is not backtest-validated and never weakens
-the production fresh-live-low gate.
+When the live instant-sell print is more than 2.5% but no more than 3% above the buy band, the item
+may enter a separate **`flip-patient-probe`** experiment. The probe posts at the lower band price,
+replays that same band order, must pass the normal replay/regime/profit gates, and uses at most 5%
+of liquid across all probe offers. It exists to gather real evidence that the band bid can fill;
+the distance rule never weakens the production gate.
 
 Daily UTC patterns use a separate **`flip-time-of-day`** experiment. `flipper.signals time-scan`
 tests 6-hour entry/exit windows using roughly three months of data: the older 70% selects the
-window and the newest 30% must independently remain net-positive with at least 20 observations,
+window and the newest 30% must independently remain net-positive with at least 12 observations,
 a positive median after-tax profit, and at least a 60% win rate; the training window needs at
-least 40 observations. This strategy sizes to requested/free slots, fillability, GE limit, available
-liquid, and the normal slot-profit floor, cancels a zero-fill entry after its 6-hour UTC window,
-and hard-exits by 24h. It never weakens the normal patient-band gate or gets merged into patient
-performance.
+least 40 observations. Today's exact live buy/sell pair must also pass a capacity-aware replay with
+capital reservation and forced exits. This strategy sizes to requested/free slots, fillability, GE
+limit, available liquid, replayed downside, and the normal slot-profit floor; it cancels a zero-fill
+entry after its 6-hour UTC window and hard-exits by 24h. It never weakens the normal patient-band
+gate or gets merged into patient performance.
 
 High-value gear uses a separate **`flip-active`** strategy because ordinary 15-90 minute margin
 flipping is not the percentile-band strategy. `flipper.signals active-scan` screens items above
 1m for fresh two-sided prints, after-tax net margin, minimum ROI, real flow on both sides, and
-no sharp 5m decline. Active quantity is capped only by the GE limit and available liquid gp.
-Active offers compete for available slots by expected realized gp/hour, cancel if unfilled after
-30 minutes, and hard-exit by 90 minutes.
+no sharp 5m decline. The executable pair must produce at least three completed replay trades from
+two entry episodes, at least a 60% win rate, positive mean profit, and enough edge to cover its
+worst replayed loss. Active quantity is capped by expected fills, the GE limit, available liquid,
+and the lane-wide forced-exit risk budget. Active offers compete for available slots by expected
+realized gp/hour, cancel if unfilled after 30 minutes, and hard-exit by 90 minutes.
 Do not claim the 12h band backtest validates these calls; label and grade them separately.
 
 An item becomes a **staple** only after at least five profitable completed round-trips, positive
@@ -206,14 +209,13 @@ liquidity, budget, or slot gates.
 - The user may constrain the run with planner flags such as `--strategies patient,active` and
   `--max-new-slots 3`. Treat those as deterministic constraints. Do not add disabled strategies back
   by hand, and do not exceed the slot cap to improve utilization.
-- Patient and time-of-day order sizes may exceed the expected-fill estimate up to the signal's
-  `exit_capacity_qty` (what the sell side can absorb before the lane's exit deadline, capped by
-  GE limit and budget): a buy-side partial fill is nearly free, while the exit leg is what
-  strands capital. Expected profit and the profit floors stay anchored to the conservative
-  `fillable_qty` expected-fill estimate, so unlikely fills are never credited. Active offers
-  keep exact flow-based sizing — high-value partial fills are not free.
-- Every slot must clear two floors: the flat per-slot floor (0.02% of liquid) and a
-  capital-return floor (0.05%/hour on the gp expected to be committed to the round trip).
+- Every lane sizes to the conservative `fillable_qty` expected-fill estimate, capped by budget
+  and GE limit, so unlikely fills are never credited. Patient and time-of-day positions are
+  additionally capped by what a replayed forced exit would cost; active positions draw on a single
+  lane-wide forced-exit risk budget shared across every active slot the run opens.
+- Every slot must clear two floors: a flat per-slot floor (1,000gp — absolute, because what one
+  offer can earn is capped by the item's buy limit and flow, not by the bank) and a capital-return
+  floor (0.05%/hour on the gp expected to be committed to the round trip).
   A thin item (low `score` driven by small `liquidity_profit`) stays small or unfilled
   regardless of margin.
 - The default patient flip horizon is 2-6h with a hard 12h exit. Never reprice a buy upward. Cancel

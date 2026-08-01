@@ -39,8 +39,8 @@ Then just talk to it: *"50m liquid, what should I buy?"*
 
 Typical requests, in plain chat:
 
-- **"50m liquid, what should I do?"** — syncs your exports, checks every open offer (hold, cancel, collect, or reprice), then fills your free slots and presents one action table.
-- **"What should I do with my current offers?"** — gives advice for open offers only, no liquid gp needed.
+- **"50m liquid, what should I do?"** — syncs your exports, checks every open offer (hold, cancel, collect, or reprice), then fills free slots. Offer-only review works the same way with no cash: *"what should I do with my current offers?"*
+- **"Are the items I usually flip still good right now?"** — reads your Flipping Utilities history, re-checks those winners against today's prices and the same gates, and only keeps ones that still clear.
 - **"Going to bed, 120m."** — overnight mode: sizes positions to a 12-hour window.
 - **"Only active flips, max 5 slots."** — preferences go straight to the planner as hard limits.
 - **"Anything being talked about that's worth flipping?"** — optional research pass over the OSRS news feed and Reddit. It can re-rank trades that already passed, but it never invents a trade.
@@ -61,22 +61,22 @@ Every row includes the latest instant-sell/instant-buy prices (`live lo/hi`) plu
 
 The LLM is not choosing trades. The planner (`flipper.plan`) does the ranking, sizing, open-offer checks, and formatting. The agent just collects your inputs, runs it once, and presents the results.
 
-Buy and sell targets come from percentile bands over ~15 days of hourly prices (buy at the 35th percentile of instant-sells, sell at the 75th of instant-buys), and every margin is after GE tax. Open offers are checked before anything new is suggested: zero-fill buys cancel after 4h, old sells move toward the live bid, and the 12h exit is counted even at a loss. The backtest uses the same exit rule, so the live plan should too.
+Patient buy/sell bands come from percentiles over recent hourly prices (buy near the 35th percentile of instant-sells, sell near the 75th of instant-buys). Live plans post at today's executable prices when those sit close enough to the band, and every margin is after GE tax. Open offers are checked before anything new is suggested: zero-fill buys cancel after 4h, old sells move toward the live bid, and the hard exit is counted even at a loss.
 
 Each strategy has its own checks:
 
 
-| strategy    | horizon                     | must pass                                                                                                                                                                                             |
-| ----------- | --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **patient** | 2-12h band flips            | trading at the band's buy target *now*; 6h trend check against downtrends (a big margin often means the item is dropping, not bouncing); net positive when the band's rules are replayed over history |
-| **active**  | 15-90m, items over 1m       | fresh two-sided quotes, after-tax margin and ROI floors, real flow on both sides; reports its expected loss if the spread doesn't close                                                               |
-| **time**    | recurring UTC windows       | picked on older data, then still profitable on newer data it has not seen                                                                                                                             |
-| **probe**   | small near-band experiments | capped at 5% of liquid in total                                                                                                                                                                       |
+| strategy    | horizon                     | must pass                                                                                                                                                                                                 |
+| ----------- | --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **patient** | 2-12h band flips            | live price near the buy band; 6h regime/trend check; today's buy/sell prices replay profitably over recent history, including forced exits                                                                |
+| **active**  | 15-90m, items over 1m       | fresh two-sided quotes, ROI floor, real flow on both sides; repeatable positive replay; sized so forced-exit downside fits a shared lane risk budget                                                       |
+| **time**    | recurring UTC windows       | picked on older data, still profitable on newer holdout data, and today's prices also clear a replay with forced exits                                                                                    |
+| **probe**   | small near-band experiments | same replay gate as patient, but fill reachability is unvalidated; capped at 5% of liquid in total                                                                                                        |
 
 
-Items compete for free slots by expected realized gp/hour, not just the live margin. A big spread that fills once a day can lose to a smaller spread with faster, smaller margins. Quantity is capped by the GE limit and estimated fillability, each slot has to clear a profit floor, and when the filters leave liquid unspent the plan says why instead of filling slots for the sake of it.
+Items compete for free slots by expected realized gp/hour from that replayed evidence, not just the live spread. Quantity is capped by GE limit, expected fills, budget, and (for patient/time) per-position downside; active shares one lane-wide downside budget. Each slot must clear a flat 1,000gp profit floor and a capital-return floor. When filters leave liquid unspent, the plan names the binding constraint instead of inventing weak fills.
 
-Each call is written as an intent (item, side, quantity, price, strategy, reason, prediction). Place that exact offer and the plugin fork will tag it it. Later runs grade the call against your real fills. Five profitable round trips make an item a personal staple, so the planner is willing to size it a bit higher, but it still has to pass the same checks.
+Each call is written as an intent (item, side, quantity, price, strategy, reason, prediction). Place that exact offer and the plugin fork will tag it. Later runs grade the call against your real fills. Items with a strong personal FU history can be pulled in as candidates and sized with your fill evidence, but they still have to pass the same gates.
 
 ## CLI
 
@@ -91,24 +91,6 @@ uv run python -m flipper.plan --cash 50000000 --strategies active --max-new-slot
 - `--max-new-slots <n>`: cap new offers after checking current offers.
 - `--horizon overnight`: drop keyboard-dependent strategies and size for 12h away.
 - `--write-intents`: queue exact offer signatures for the plugin fork to tag.
-
-## Evaluating planner changes
-
-Planner unit tests are supplemented by a frozen replay corpus that reruns selection from raw market
-universes across dates, bankrolls, attendance horizons, and slot caps, then scores the chosen orders
-on withheld future buckets:
-
-```bash
-uv run python -m evaluation.runner --output evaluation/results/v2-current.json
-uv run python -m evaluation.compare \
-  evaluation/baselines/v2-main.json evaluation/results/v2-current.json
-```
-
-Observed and synthetic cohorts gate separately within each decision lane. V2 does not claim
-mixed-lane whole-planner portfolio optimality. The frozen baseline records reproducibility and
-characterization; it does not relax candidate acceptance. The evaluator and its fixtures must not
-change in the same patch as planner behavior. See
-[`evaluation/SPEC.md`](evaluation/SPEC.md).
 
 ## Runtime data
 
