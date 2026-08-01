@@ -4,8 +4,10 @@ This complements flipper.prices.margins. The margins command looks at the curren
 this command asks whether recent timeseries data has recurring buy/sell bands worth
 placing patient GE offers around.
 
-Execution bands use 1h data (~15 days) for 2-12h flips. Regime and trend checks use 6h data
-(~3 months) so a short-lived dip cannot hide a broader falling market.
+Execution bands use 1h data for 2-12h flips. Regime and trend checks use 6h data so a
+short-lived dip cannot hide a broader falling market. Both are up to 365 returned points and are
+not guaranteed contiguous, so a row count is not a duration: order replays check each block's
+wall-clock span and discard blocks that do not cover the time their row count implies.
 
 CLI:
     python -m flipper.signals scan --seed-limit 40 --limit 20 [--timestep 6h|1h|24h|5m]
@@ -50,6 +52,22 @@ REPLAY_EVIDENCE_BLOCKS = 20
 
 def _replay_window(rows: list[dict], block_points: int) -> list[dict]:
     return rows[-block_points * REPLAY_EVIDENCE_BLOCKS:]
+
+
+def _last_observed_low(rows: list[dict]) -> int | None:
+    """Most recent printed instant-sell price, or None if nothing traded in the window."""
+    return next(
+        (row["avgLowPrice"] for row in reversed(rows) if row.get("avgLowPrice")),
+        None,
+    )
+
+
+def _patient_replay_shape(entry_hours: float, timestep: str) -> tuple[int, int, float]:
+    """Return entry points, hold points, and hours represented by each history row."""
+    step_hours = _STEP_MINUTES[timestep] / 60
+    entry_points = max(1, math.ceil(entry_hours / step_hours))
+    hold_points = max(1, math.ceil(MAX_HOLD_HOURS / step_hours))
+    return entry_points, hold_points, step_hours
 
 # Active-margin lane: short-lived, high-value opportunities are structurally different from
 # patient percentile-band flips. These constants deliberately keep that lane narrow and small.
@@ -217,32 +235,38 @@ def _patient_order_replay(
     quantity: int,
     entry_hours: float,
     participation: float,
+    timestep: str = EXECUTION_TIMESTEP,
 ) -> dict:
-    """Replay a current patient order with hourly touch and capacity limits."""
-    entry_points = max(1, round(entry_hours))
-    block_points = entry_points + MAX_HOLD_HOURS
+    """Replay a current patient order with timestep-aware touch and capacity limits."""
+    entry_points, hold_points, step_hours = _patient_replay_shape(entry_hours, timestep)
+    block_points = entry_points + hold_points
     profits = []
     utilities = []
-    entry_touches = [
-        bool(row.get("avgLowPrice") and row["avgLowPrice"] <= buy)
-        for row in rows
-    ]
-    episodes = sum(
-        touched and (index == 0 or not entry_touches[index - 1])
-        for index, touched in enumerate(entry_touches)
-    )
+    filled_quantities = []
+    # Distinct entry occasions that produced a graded outcome. Counting raw touches let an
+    # entry with no complete horizon after it — the trailing one, always — pad the quorum
+    # `qualifies` checks, which is the same overcount the active lane already dropped.
+    episodes = 0
     # Align complete horizons to the current decision boundary. Starting from
     # the oldest cache row can discard the newest partial horizon and grade a
     # different time-of-day phase than the order being considered now.
     first_start = len(rows) % block_points
+    nominal_span = round(step_hours * 3600) * (block_points - 1)
     for start in range(first_start, len(rows) - block_points + 1, block_points):
         block = rows[start:start + block_points]
+        # Returned rows are not guaranteed contiguous — buckets with no trades are omitted —
+        # so a row count is not a duration. A stretched block charges the wrong capital hours
+        # and force-exits at a price from the wrong hour, so it is not evidence about this
+        # order. Endpoint arithmetic suffices: n grid-aligned rows spanning (n-1) steps
+        # cannot contain a gap.
+        if block[-1]["timestamp"] - block[0]["timestamp"] != nominal_span:
+            continue
         remaining = quantity
         inventory = 0
         capital_unit_hours = 0
         full_fill_index = None
         for index, row in enumerate(block[:entry_points]):
-            capital_unit_hours += remaining + inventory
+            capital_unit_hours += (remaining + inventory) * step_hours
             if (
                 remaining
                 and row.get("avgLowPrice")
@@ -265,7 +289,7 @@ def _patient_order_replay(
         )
         profit = 0
         for row in block[sell_start:]:
-            capital_unit_hours += inventory
+            capital_unit_hours += inventory * step_hours
             if (
                 inventory
                 and row.get("avgHighPrice")
@@ -280,17 +304,22 @@ def _patient_order_replay(
                 profit += sold * (sell - buy - tax(sell))
                 inventory -= sold
         if inventory:
-            force_price = block[-1].get("avgLowPrice")
-            profit += inventory * (
-                force_price - buy - tax(force_price)
-                if force_price else -buy
-            )
+            force_price = _last_observed_low(block[sell_start:])
+            # No low printed anywhere in the hold segment means the forced exit is
+            # unobservable, not free and not total. Writing off `buy` per unit said the
+            # item became worthless and poisoned worst_profit_gp, which sizes positions.
+            if force_price is None:
+                continue
+            profit += inventory * (force_price - buy - tax(force_price))
         utility = profit - round(
             buy * capital_unit_hours * CAPITAL_RESERVATION_RATE
         )
         profits.append(profit)
         utilities.append(utility)
+        filled_quantities.append(quantity - remaining)
+        episodes += quantity > remaining
     total_utility = sum(utilities)
+    worst_index = min(range(len(profits)), key=profits.__getitem__) if profits else None
     return {
         "blocks": len(utilities),
         "opportunity_episodes": episodes,
@@ -301,6 +330,9 @@ def _patient_order_replay(
             round(sum(profits) / len(profits)) if profits else 0
         ),
         "worst_profit_gp": min(profits) if profits else 0,
+        "worst_filled_qty": (
+            filled_quantities[worst_index] if worst_index is not None else 0
+        ),
         "qualifies": (
             len(utilities) >= 3
             and episodes >= 2
@@ -474,10 +506,9 @@ def _capped_sell(rows: list[dict], timestep: str, sell_band_full: int, trend: di
 BUY_QUANTILE = 0.35
 SELL_QUANTILE = 0.75
 
-# Production buys require evidence that the band has just traded: Wiki `low` is the latest
-# instant-sell print, so current_low <= target_buy means a seller recently crossed that price.
-# Near-band bids are intentionally kept out of production and exposed separately as an
-# experimental patient-probe lane whose fills can be measured.
+# Production may follow a fresh live low slightly above the historical band, but only after replay
+# validates that exact live order. The narrow remainder of the near-band window is exposed as a
+# patient probe that keeps its bid at the lower band so fill reachability can be measured.
 PATIENT_PROBE_MAX_DISTANCE_PCT = 3.0
 
 
@@ -542,21 +573,12 @@ def item_signal(
     # the band outranks one 2% above it — never a gate. The gate is `ready_to_buy` below, whose
     # prices are the ones the replay evidence actually validates.
     at_band = bool(price_fresh and current_low and current_low <= target_buy)
-    patient_probe_ready = bool(
-        price_fresh
-        and distance_to_buy_pct is not None
-        and 0 < distance_to_buy_pct <= PATIENT_PROBE_MAX_DISTANCE_PCT
-    )
     buy_price = current_low if at_band else target_buy
-    margin = target_sell - buy_price - tax(target_sell)
-    if margin <= 0:
+    band_margin = target_sell - buy_price - tax(target_sell)
+    if band_margin <= 0:
         return None
-    margin_limit = margin * ge_limit if ge_limit else None
     volume_1h = _volume_1h(item_id)
     fillable_qty = _fillable_qty(ge_limit, volume_1h, fill_window_hours, participation_rate)
-    liquidity_profit = margin * fillable_qty
-    capital_required = buy_price * fillable_qty
-    roi_pct = round(margin / buy_price * 100, 2) if buy_price else None
     distance_to_sell_pct = (
         round((target_sell - current_high) / target_sell * 100, 2)
         if current_high and target_sell else None
@@ -566,10 +588,9 @@ def item_signal(
                           timestep=regime_timestep)
 
     regime = _with_downtrend_risk(regime, trend)
-    # The executable order: the price this actually posts, and therefore the price
-    # `_patient_order_replay` below is asked to validate. The band prices are never replayed, so
-    # they cannot gate anything — exporting a second, stricter `ready_to_buy` made the offer-review
-    # path cancel buys the candidate loop had just placed.
+    # The executable order: production posts at the fresh live touch, while a probe deliberately
+    # stays at the band to measure whether that lower bid is reachable. The replay validates the
+    # same pair the planner will actually emit.
     ready_to_buy = bool(
         price_fresh
         and current_low
@@ -586,32 +607,44 @@ def item_signal(
         < distance_to_buy_pct
         <= PATIENT_PROBE_MAX_DISTANCE_PCT
     )
-    executable_entry = (
-        current_low if ready_to_buy or patient_probe_ready else buy_price
-    )
-    executable_exit = (
-        current_high if ready_to_buy or patient_probe_ready else target_sell
-    )
+    executable_entry = current_low if ready_to_buy else buy_price
+    executable_exit = current_high if ready_to_buy else target_sell
     executable_margin = (
         executable_exit - executable_entry - tax(executable_exit)
     )
+    if executable_margin <= 0:
+        return None
+    margin_limit = executable_margin * ge_limit if ge_limit else None
+    liquidity_profit = executable_margin * fillable_qty
+    capital_required = executable_entry * fillable_qty
+    roi_pct = (
+        round(executable_margin / executable_entry * 100, 2)
+        if executable_entry else None
+    )
+    replay_entry_points, replay_hold_points, _ = _patient_replay_shape(
+        fill_window_hours, timestep
+    )
     replay = _patient_order_replay(
-        _replay_window(rows, max(1, round(fill_window_hours)) + MAX_HOLD_HOURS),
+        _replay_window(rows, replay_entry_points + replay_hold_points),
         executable_entry,
         executable_exit,
         fillable_qty,
         fill_window_hours,
         0.10 if ready_to_buy else 0.05,
+        timestep,
     ) if fillable_qty > 0 else {
         "blocks": 0,
         "opportunity_episodes": 0,
         "mean_utility_gp": 0,
         "mean_profit_gp": 0,
         "worst_profit_gp": 0,
+        "worst_filled_qty": 0,
         "qualifies": False,
     }
 
-    score_base = liquidity_profit or (margin_limit if margin_limit is not None else margin)
+    score_base = liquidity_profit or (
+        margin_limit if margin_limit is not None else executable_margin
+    )
     regime_factor = _REGIME_FACTOR[regime["level"]]
     readiness_factor = 1.0 if at_band else 0.75
     score = round(score_base * uniformity_avg * uniformity_equivalence *
@@ -723,17 +756,21 @@ def _active_replay_evidence(rows: list[dict], buy: int, sell: int) -> dict:
         bool(row.get("avgLowPrice") and row["avgLowPrice"] <= buy)
         for row in rows
     ]
-    episodes = sum(
-        touched and (index == 0 or not entry_touches[index - 1])
-        for index, touched in enumerate(entry_touches)
-    )
+    episode_ids = []
+    episode = -1
+    for index, touched in enumerate(entry_touches):
+        if touched and (index == 0 or not entry_touches[index - 1]):
+            episode += 1
+        episode_ids.append(episode if touched else None)
     profits = []
+    completed_episodes = set()
     index = 0
     while index < len(rows):
         if not entry_touches[index]:
             index += 1
             continue
-        exit_index = min(index + hold_points, len(rows) - 1)
+        horizon_end = index + hold_points
+        exit_index = min(horizon_end, len(rows) - 1)
         exit_price = None
         for candidate_index in range(index + 1, exit_index + 1):
             high = rows[candidate_index].get("avgHighPrice")
@@ -741,14 +778,17 @@ def _active_replay_evidence(rows: list[dict], buy: int, sell: int) -> dict:
                 exit_price = sell
                 exit_index = candidate_index
                 break
+        if exit_price is None and horizon_end >= len(rows):
+            break
         if exit_price is None:
             exit_price = rows[exit_index].get("avgLowPrice")
         if exit_price:
             profits.append(exit_price - buy - tax(exit_price))
+            completed_episodes.add(episode_ids[index])
         index = exit_index + 1
     return {
         "trades": len(profits),
-        "opportunity_episodes": episodes,
+        "opportunity_episodes": len(completed_episodes),
         "win_rate": (
             sum(profit > 0 for profit in profits) / len(profits)
             if profits else 0
@@ -983,45 +1023,46 @@ def _time_replay_evidence(
     buy: int,
     sell: int,
     quantity: int,
-    entry_bucket: int | None = None,
+    entry_bucket: int,
 ) -> dict:
-    """Replay one current time-lane order through 30-hour blocks.
+    """Replay one current time-lane order through 24-hour blocks.
 
-    `entry_bucket` is the UTC six-hour window the pattern actually buys in. It matters because a
-    day is four 6h buckets and a block is five, so stepping block-by-block walks the entry across
-    every time of day in turn — which grades the strategy at every hour except the one it trades.
-    Anchored to the entry window instead, consecutive blocks start one day apart and the replay
-    asks the question the lane is actually asking. Blocks then share their final hold bucket with
-    the next block's entry bucket; that is a boundary bucket, not a shared position.
+    `entry_bucket` is the UTC six-hour window the pattern actually buys in, and it is required:
+    a day is four 6h buckets and a block is five, so any walk that is not anchored to the entry
+    window grades the strategy at every hour except the one it trades. Blocks share their final
+    hold bucket with the next block's entry bucket; that is a boundary bucket, not a shared
+    position.
     """
     block_points = 1 + TIME_OF_DAY_MAX_HOLD_STEPS
     participation = 0.05
     profits = []
     utilities = []
+    filled_quantities = []
     in_window = [
-        entry_bucket is None
-        or (
-            isinstance(row.get("timestamp"), int)
-            and datetime.fromtimestamp(row["timestamp"], tz=timezone.utc).hour
-            // TIME_OF_DAY_STEP_HOURS == entry_bucket
-        )
+        isinstance(row.get("timestamp"), int)
+        and datetime.fromtimestamp(row["timestamp"], tz=timezone.utc).hour
+        // TIME_OF_DAY_STEP_HOURS == entry_bucket
         for row in rows
     ]
-    entry_touches = [
-        bool(row.get("avgLowPrice") and row["avgLowPrice"] <= buy and in_window[index])
-        for index, row in enumerate(rows)
+    # Distinct entry occasions that produced a graded outcome — never raw touches. The
+    # trailing entry never has a complete horizon after it, so counting it padded the quorum
+    # `qualifies` checks with an opportunity that has no observable result.
+    episodes = 0
+    # Select starts by the UTC bucket each row actually carries, never by index stride.
+    # The API omits buckets that saw no trades, so "four rows later" is not "one day
+    # later": after a single gap a strided walk lands on the wrong hour and stays there,
+    # grading the pattern at every time of day except the one it trades.
+    starts = [
+        index for index, ok in enumerate(in_window)
+        if ok and index + block_points <= len(rows)
     ]
-    episodes = sum(
-        touched and (index == 0 or not entry_touches[index - 1])
-        for index, touched in enumerate(entry_touches)
-    )
-    if entry_bucket is None:
-        starts = range(0, len(rows) - block_points + 1, block_points)
-    else:
-        first = next((index for index, ok in enumerate(in_window) if ok), 0)
-        starts = range(first, len(rows) - block_points + 1, TIME_OF_DAY_BUCKETS)
+    nominal_span = TIME_OF_DAY_STEP_HOURS * 3600 * (block_points - 1)
     for start in starts:
         block = rows[start:start + block_points]
+        # Right entry hour is necessary but not sufficient — the horizon after it must
+        # also cover the elapsed time it claims to.
+        if block[-1]["timestamp"] - block[0]["timestamp"] != nominal_span:
+            continue
         entry = block[0]
         fill_capacity = math.floor(
             (entry.get("lowPriceVolume") or 0) * participation
@@ -1050,17 +1091,19 @@ def _time_replay_evidence(
                 profit += sold * (sell - buy - tax(sell))
                 inventory -= sold
         if inventory:
-            force_price = block[-1].get("avgLowPrice")
-            profit += inventory * (
-                force_price - buy - tax(force_price)
-                if force_price else -buy
-            )
+            force_price = _last_observed_low(block[1:])
+            if force_price is None:
+                continue
+            profit += inventory * (force_price - buy - tax(force_price))
         utility = profit - round(
             buy * capital_unit_hours * CAPITAL_RESERVATION_RATE
         )
         profits.append(profit)
         utilities.append(utility)
+        filled_quantities.append(filled)
+        episodes += filled > 0
     total_utility = sum(utilities)
+    worst_index = min(range(len(profits)), key=profits.__getitem__) if profits else None
     return {
         "blocks": len(utilities),
         "opportunity_episodes": episodes,
@@ -1071,6 +1114,9 @@ def _time_replay_evidence(
             round(sum(profits) / len(profits)) if profits else 0
         ),
         "worst_profit_gp": min(profits) if profits else 0,
+        "worst_filled_qty": (
+            filled_quantities[worst_index] if worst_index is not None else 0
+        ),
         "qualifies": (
             len(utilities) >= 3
             and episodes >= 2

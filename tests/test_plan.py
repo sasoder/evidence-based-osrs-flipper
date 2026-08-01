@@ -3,6 +3,7 @@ from __future__ import annotations
 import io
 import unittest
 from contextlib import redirect_stderr
+from datetime import datetime, timezone
 from unittest.mock import patch
 
 from flipper import intents, plan, signals
@@ -153,18 +154,26 @@ class OverpricedNoBandAskTests(unittest.TestCase):
         self.assertEqual(res["new_price"], plan._break_even(2500))
         self.assertTrue(res["cost_floor"])
 
+def _replay_evidence(quantity: int, profit_per_unit: int, *, worst_profit: int = 0,
+                     worst_filled: int | None = None) -> dict:
+    return {
+        "qualifies": True,
+        "blocks": 5,
+        "opportunity_episodes": 3,
+        "mean_profit_gp": profit_per_unit * quantity,
+        "mean_utility_gp": profit_per_unit * quantity * 4 // 5,
+        "worst_profit_gp": worst_profit,
+        "worst_filled_qty": quantity if worst_filled is None else worst_filled,
+    }
 
 
 def _sig(iid, score, *, regime="low", entry_price=100, exit_price=200, fillable=50, ge_limit=1000,
-         qualifies=True, profit_per_unit=100):
+         qualifies=True, profit_per_unit=100, vol_1h=signals.SEED_MIN_VOLUME):
+    replay = _replay_evidence(fillable, profit_per_unit)
+    replay["qualifies"] = qualifies
     return {"id": iid, "name": f"item{iid}",
-            # plan derives avg_profit_per_unit as mean_profit_gp / fillable_qty, so scale the
-            # replayed position profit with the size to keep a flat 100gp/unit across fixtures.
-            "replay_evidence": {"qualifies": qualifies, "blocks": 5, "opportunity_episodes": 3,
-                                "mean_profit_gp": profit_per_unit * fillable,
-                                "mean_utility_gp": profit_per_unit * fillable * 4 // 5,
-                                "worst_profit_gp": 0}, "entry_price": entry_price, "exit_price": exit_price,
-            "buy_band": entry_price,
+            "replay_evidence": replay, "entry_price": entry_price, "exit_price": exit_price,
+            "buy_band": entry_price, "vol_1h": vol_1h,
             "regime": {"level": regime, "reason": "x"}, "fillable_qty": fillable,
             "fill_window_hours": 4.0, "ge_limit": ge_limit, "score": score,
             "current_low": entry_price, "current_high": exit_price, "price_fresh": True,
@@ -218,6 +227,7 @@ class PlanTests(unittest.TestCase):
             "exit_window_utc": "12:00-18:00",
             "train": {"trades": 20, "win_rate": 0.7, "median_profit_per_unit": 15},
             "test": {"trades": 10, "win_rate": 0.6, "median_profit_per_unit": 12},
+            "replay_evidence": _replay_evidence(5_000, 18),
         }], "rejected": []}
 
         p = self._plan([], time_scan=time_scan)
@@ -245,6 +255,7 @@ class PlanTests(unittest.TestCase):
                 "exit_window_utc": "12:00-18:00",
                 "train": {"trades": 20, "win_rate": 0.7, "median_profit_per_unit": 15},
                 "test": {"trades": 10, "win_rate": 0.6, "median_profit_per_unit": 12},
+                "replay_evidence": _replay_evidence(1_000, 18),
             }
             for i in range(1, 4)
         ], "rejected": []}
@@ -269,6 +280,7 @@ class PlanTests(unittest.TestCase):
             "exit_window_utc": "12:00-18:00",
             "train": {"trades": 20, "win_rate": 0.7, "median_profit_per_unit": 15},
             "test": {"trades": 10, "win_rate": 0.6, "median_profit_per_unit": 12},
+            "replay_evidence": _replay_evidence(5_000, 18),
         }], "rejected": []}
 
         p = self._plan(
@@ -289,6 +301,19 @@ class PlanTests(unittest.TestCase):
         self.assertEqual(p["buys"][0]["qty"], 10)
         self.assertEqual(p["buys"][0]["expected_profit"], 1_000)  # 100/u * 10 expected fills
 
+    def test_patient_downside_cap_uses_filled_not_posted_replay_quantity(self) -> None:
+        sig = _sig(1, 100, fillable=100, profit_per_unit=10_000)
+        sig["replay_evidence"].update({
+            "worst_profit_gp": -100_000,
+            "worst_filled_qty": 1,
+        })
+
+        p = self._plan([sig], cash=100_000_000)
+
+        # The 0.3% patient budget is 300k. One actually filled replay unit lost 100k,
+        # so at most three units fit; dividing by 100 posted units would incorrectly allow 100.
+        self.assertEqual(p["buys"][0]["qty"], 3)
+
     def test_time_lane_sizes_to_expected_fills(self) -> None:
         time_scan = {"candidates": [{
             "id": 7,
@@ -304,6 +329,7 @@ class PlanTests(unittest.TestCase):
             "exit_window_utc": "12:00-18:00",
             "train": {"trades": 20, "win_rate": 0.7, "median_profit_per_unit": 15},
             "test": {"trades": 10, "win_rate": 0.6, "median_profit_per_unit": 12},
+            "replay_evidence": _replay_evidence(60, 20),
         }], "rejected": []}
 
         p = self._plan([], time_scan=time_scan)
@@ -329,6 +355,7 @@ class PlanTests(unittest.TestCase):
             "exit_window_utc": "12:00-18:00",
             "train": {"trades": 20, "win_rate": 0.7, "median_profit_per_unit": 500},
             "test": {"trades": 10, "win_rate": 0.6, "median_profit_per_unit": 450},
+            "replay_evidence": _replay_evidence(1, 550),
         }], "rejected": []}
 
         p = self._plan([], time_scan=time_scan)
@@ -516,6 +543,7 @@ class PlanTests(unittest.TestCase):
             "expected_profit_per_unit": 18, "score": 7_500, "hold_hours": 12,
             "entry_window_utc": "00:00-06:00", "exit_window_utc": "12:00-18:00",
             "train": {"trades": 20}, "test": {"trades": 10},
+            "replay_evidence": _replay_evidence(5_000, 18),
         }], "rejected": []}
 
         p = self._plan(
@@ -836,6 +864,66 @@ class PlanTests(unittest.TestCase):
         self.assertEqual(p["sell_fills"][0]["qty"], 4)
         self.assertEqual(p["sell_fills"][0]["price"], 200)
         self.assertEqual(p["sell_fills"][0]["action"], "sell")
+
+    def test_sell_fill_keeps_the_strategys_absolute_hard_exit(self) -> None:
+        # A time-of-day buy carries an absolute deadline. Converting the filled units into a
+        # sell must not restart the clock: dropping it let a lane that hard-exits at 24h run
+        # a further 24h from sell placement.
+        sig = {**_sig(1, 100, entry_price=100, exit_price=200), "ready_to_buy": False}
+        offers = [{"id": 1, "side": "buy", "qty": 10, "filled_qty": 4, "price": 100,
+                   "age_hours": 7, "strategy": "time-of-day",
+                   "hard_exit_at": "2026-08-01T12:00+00:00"}]
+        p = self._plan([], item=lambda i: sig, offers=offers)
+
+        sell = p["sell_fills"][0]
+        self.assertEqual(sell["hard_exit_at"], "2026-08-01T12:00+00:00")
+        self.assertEqual(sell["predicted"]["by"], "2026-08-01T12:00+00:00")
+
+    def test_sell_fill_clears_at_market_when_the_hard_exit_already_passed(self) -> None:
+        # Carrying the deadline forward is not enough on its own: a deadline in the past is an
+        # instruction to clear now. Posting the 200 band target with a due-in-the-past
+        # prediction would be an order that can never fill and a lie about when it will.
+        sig = {**_sig(1, 100, entry_price=100, exit_price=200), "ready_to_buy": False,
+               "current_high": 90}
+        offers = [{"id": 1, "side": "buy", "qty": 10, "filled_qty": 4, "price": 100,
+                   "age_hours": 30, "strategy": "time-of-day",
+                   "hard_exit_at": "2020-01-01T00:00+00:00"}]
+        p = self._plan([], item=lambda i: sig, offers=offers)
+
+        sell = p["sell_fills"][0]
+        self.assertEqual(sell["price"], 90)
+        # The deadline stays attached. Dropping it would let the next run fall back to
+        # "24h from sell placement" — the very clock this fix exists to stop restarting.
+        self.assertEqual(sell["hard_exit_at"], "2020-01-01T00:00+00:00")
+        by = datetime.fromisoformat(sell["predicted"]["by"])
+        self.assertLess(abs((by - datetime.now(timezone.utc)).total_seconds()), 120)
+
+    def test_thin_patient_candidates_rank_below_liquid_ones(self) -> None:
+        # plan() widens the patient seed to min_volume=1, so items under the normal volume
+        # floor reach ranking. The thin tier is the only thing holding them back, and it must
+        # outrank raw gp/hour: the thin item here is strictly the more profitable one.
+        thin = _sig(1, 100, entry_price=100, exit_price=200, fillable=50,
+                    profit_per_unit=500, vol_1h=signals.SEED_MIN_VOLUME - 1)
+        liquid = _sig(2, 100, entry_price=100, exit_price=200, fillable=50,
+                      profit_per_unit=100, vol_1h=signals.SEED_MIN_VOLUME)
+        p = self._plan([thin, liquid])
+
+        self.assertEqual([b["id"] for b in p["buys"]], [2, 1])
+
+    def test_patient_scan_is_seeded_below_the_normal_volume_floor(self) -> None:
+        # The thin tier only matters because the seed is widened; pin them together.
+        with (
+            patch("flipper.plan.signals.scan", return_value=[]) as scan,
+            patch("flipper.plan.signals.active_margin_scan",
+                  return_value={"candidates": [], "rejected": []}),
+            patch("flipper.plan.signals.time_of_day_scan",
+                  return_value={"candidates": [], "rejected": []}),
+            patch("flipper.plan._cost_basis", return_value={}),
+            patch("flipper.plan._personal_execution_stats", return_value={}),
+        ):
+            plan.plan(cash=1_000_000)
+
+        self.assertEqual(scan.call_args.kwargs["min_volume"], 1)
 
     def test_patient_probe_is_not_cancelled_for_waiting_below_live_low(self) -> None:
         offers = [{"id": 1, "side": "buy", "qty": 10, "filled_qty": 0,
@@ -1158,6 +1246,15 @@ class DeploymentConstraintTests(unittest.TestCase):
     def test_partly_deployed_run_points_at_limits_not_at_the_bankroll(self) -> None:
         p = self._plan([_sig(1, 100, fillable=50)], cash=100_000_000)
         self.assertIn("GE buy limits and flow", p["deployment"]["constraint"])
+
+    def test_partly_deployed_run_names_a_remaining_profit_floor(self) -> None:
+        p = self._plan([
+            _sig(1, 100, fillable=50, profit_per_unit=100),
+            _sig(2, 50, fillable=50, profit_per_unit=1),
+        ], cash=100_000_000)
+
+        self.assertEqual([row["id"] for row in p["buys"]], [1])
+        self.assertIn("profit and capital-return floors", p["deployment"]["constraint"])
 
 
 class BankrollMonotonicityTests(unittest.TestCase):

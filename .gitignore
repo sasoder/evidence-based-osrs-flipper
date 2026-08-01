@@ -7,6 +7,8 @@ __pycache__/
 
 # network response cache (TTL'd, regenerated on demand)
 data/cache/
+# dated snapshots of that cache, kept locally to replay a past market
+data/archives/
 
 # RuneLite runtime snapshots are local inputs, never committed
 data/incoming/flipping/

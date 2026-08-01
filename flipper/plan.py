@@ -4,7 +4,8 @@ predictions are all mechanical. The only LLM step in a session is `flipper.resea
 a small boost/avoid overlay that this planner consumes; see AGENTS.md.
 
 Pipeline:
-  1. scan() for live-low intraday candidates, then gate each on 12h backtest survival.
+  1. scan() for live-low intraday candidates, then gate each on a replay of the exact order it
+     would post — that price, that quantity — through recent non-overlapping entry/hold blocks.
   2. apply the research overlay: avoid drops a survivor; boost re-ranks survivors without
      bypassing the gate.
   3. triage the open offers you pass in (hold / reprice / cancel).
@@ -200,10 +201,30 @@ def _deployment_constraint(
         ).most_common(1)
         detail = f": {top[0][0]} ({top[0][1]} items)" if top else ""
         return f"no candidate cleared the evidence gates{detail}"
+    sizing_constraints = Counter(
+        row["constraint"] for row in skipped if row.get("constraint")
+    ).most_common(1)
+    if sizing_constraints:
+        constraint, count = sizing_constraints[0]
+        return (
+            f"{constraint} on {count} remaining candidate"
+            f"{'s' if count != 1 else ''}; GE buy limits and flow cap the "
+            f"{len(planned_buys)} selected items"
+        )
     return (
         f"GE buy limits and flow on the {len(planned_buys)} qualifying items; "
-        f"{len(skipped)} others were rejected before sizing"
+        f"{len(skipped)} others failed evidence gates"
     )
+
+
+def _worst_replay_loss_per_filled(sig: dict) -> int:
+    """Conservative loss per unit from the replay block with the worst total result."""
+    replay = sig.get("replay_evidence") or {}
+    worst_profit = replay.get("worst_profit_gp", 0)
+    worst_filled = replay.get("worst_filled_qty", 0)
+    if worst_profit >= 0 or worst_filled <= 0:
+        return 0
+    return max(1, (abs(worst_profit) + worst_filled - 1) // worst_filled)
 
 
 def _time_buy_row(sig: dict, qty: int, expected_profit: int) -> dict:
@@ -214,6 +235,7 @@ def _time_buy_row(sig: dict, qty: int, expected_profit: int) -> dict:
         f"{sig['test']['trades']} samples, "
         f"{sig['test']['median_profit_per_unit']:,}gp/u median after tax"
     )
+    replay = sig["replay_evidence"]
     return {
         "id": sig["id"],
         "name": sig["name"],
@@ -227,7 +249,9 @@ def _time_buy_row(sig: dict, qty: int, expected_profit: int) -> dict:
         "live_high": sig.get("current_high"),
         "horizon": "6-24h",
         "reason": (
-            f"{evidence_reason}; "
+            f"{evidence_reason}; current {sig['entry_price']:,}→{sig['exit_price']:,} "
+            f"order replay +{replay['mean_profit_gp']:,}gp/block over "
+            f"{replay['blocks']} blocks; "
             "sized to expected fills and GE limit, cancel zero-fill after "
             f"{TIME_OF_DAY_BUY_CANCEL_HOURS}h"
         ),
@@ -244,6 +268,7 @@ def _time_buy_row(sig: dict, qty: int, expected_profit: int) -> dict:
             "hold_hours": sig["hold_hours"],
             "train": sig["train"],
             "test": sig["test"],
+            "order_replay": replay,
         },
     }
 
@@ -294,6 +319,19 @@ def _sell_fill_row(offer: dict, triage: dict) -> dict | None:
     reason = f"sell {qty} filled unit(s) after {triage['verdict']}ing the buy offer"
     if not offer.get("intent_id") and not offer.get("strategy"):
         reason += " — untracked buy, resale will not be strategy-graded"
+    # A strategy's hard exit is an absolute instant, not a per-offer stopwatch. Dropping it
+    # restarted the clock at sell placement, so a time-of-day buy filled late in its entry
+    # window could run a further 24h against a lane that hard-exits at 24h. A deadline that
+    # has already passed is an instruction to clear now, not a target to post and wait on:
+    # carrying it forward without acting would emit a sell at the band price due in the past.
+    hard_exit_at = offer.get("hard_exit_at")
+    overdue = _deadline_due(hard_exit_at)
+    if overdue:
+        # Clear now rather than posting the band target against a deadline in the past. The
+        # deadline stays attached: if this clear does not fill, the next run must still see
+        # the offer as overdue rather than restarting a 24h clock from sell placement.
+        price = _clear_price(price, _sane_bid(market)) or price
+        reason += f" — hard exit {hard_exit_at} has passed, clear at market {price}"
     return {
         "id": offer["id"],
         "name": triage.get("name") or (market or {}).get("name"),
@@ -307,7 +345,13 @@ def _sell_fill_row(offer: dict, triage: dict) -> dict | None:
         "live_high": (market or {}).get("current_high"),
         "horizon": "0-12h",
         "reason": reason,
-        "predicted": {"direction": "up", "target": price, "by": _by_hours()},
+        "predicted": {
+            "direction": "up", "target": price,
+            # Overdue means execute now, so the prediction says now — not a stale instant in
+            # the past, and not a fresh 12h window the strategy never granted.
+            "by": _by_hours(0) if overdue else (hard_exit_at or _by_hours()),
+        },
+        **({"hard_exit_at": hard_exit_at} if hard_exit_at else {}),
         "confidence": 0.40,
     }
 
@@ -1045,8 +1089,7 @@ def plan(cash: int, offers: list[dict] | None = None,
             # not. The other two lanes pass False deliberately — time-of-day already seeds at
             # SEED_MIN_VOLUME, and the active lane trades high-value items that are thin by
             # nature, so demoting them by volume would demote the whole lane.
-            (sig.get("vol_1h") or signals.SEED_MIN_VOLUME)
-            < signals.SEED_MIN_VOLUME,
+            sig["vol_1h"] < signals.SEED_MIN_VOLUME,
             -(band_evidence["avg_profit_per_unit"] * min(
                 sig["fillable_qty"],
                 (budget_left // sig["entry_price"])
@@ -1107,15 +1150,8 @@ def plan(cash: int, offers: list[dict] | None = None,
             qty = min(personal_fillable,
                       (budget_left // buy) if buy else 0,
                       sig["ge_limit"] or 10**9)
-            replay_qty = sig["fillable_qty"] or 0
-            worst_profit = (sig.get("replay_evidence") or {}).get(
-                "worst_profit_gp", 0
-            )
-            if worst_profit < 0 and replay_qty > 0:
-                worst_per_unit = max(
-                    1,
-                    (abs(worst_profit) + replay_qty - 1) // replay_qty,
-                )
+            worst_per_unit = _worst_replay_loss_per_filled(sig)
+            if worst_per_unit:
                 qty = min(
                     qty,
                     int(liquid * PATIENT_MAX_POSITION_DOWNSIDE_PCT)
@@ -1147,15 +1183,8 @@ def plan(cash: int, offers: list[dict] | None = None,
             qty = min(sig["fillable_qty"] or 0,
                       (budget_left // buy) if buy else 0,
                       sig["ge_limit"] or 10**9)
-            worst_profit = (sig.get("replay_evidence") or {}).get(
-                "worst_profit_gp", 0
-            )
-            replay_qty = sig["fillable_qty"] or 0
-            if worst_profit < 0 and replay_qty > 0:
-                worst_per_unit = max(
-                    1,
-                    (abs(worst_profit) + replay_qty - 1) // replay_qty,
-                )
+            worst_per_unit = _worst_replay_loss_per_filled(sig)
+            if worst_per_unit:
                 qty = min(
                     qty,
                     int(liquid * TIME_MAX_POSITION_DOWNSIDE_PCT)
@@ -1171,9 +1200,13 @@ def plan(cash: int, offers: list[dict] | None = None,
                 "id": sig["id"], "name": sig["name"],
                 "reason": (
                     f"active lane forced-exit risk budget spent "
-                    f"({active_downside_budget:,}gp of "
-                    f"{int(liquid * ACTIVE_MAX_LANE_DOWNSIDE_PCT):,}gp left)"
+                    f"({active_downside_budget:,}gp remaining of "
+                    f"{int(liquid * ACTIVE_MAX_LANE_DOWNSIDE_PCT):,}gp)"
                     if spent_lane_risk else "no budget/liquidity for a slot"
+                ),
+                "constraint": (
+                    "active lane forced-exit risk budget"
+                    if spent_lane_risk else "budget or expected fillability"
                 ),
             })
             continue
@@ -1186,6 +1219,7 @@ def plan(cash: int, offers: list[dict] | None = None,
                 "id": sig["id"], "name": sig["name"],
                 "reason": (f"expected profit {expected_profit:,}gp < "
                            f"floor {required:,}gp{locked}"),
+                "constraint": "profit and capital-return floors",
             })
             continue
         if strategy_type == "patient":
@@ -1231,6 +1265,10 @@ def plan(cash: int, offers: list[dict] | None = None,
                     "patient probe has no affordable/liquid quantity"
                     if qty <= 0 else
                     f"patient probe expected profit {expected_profit:,}gp < floor {probe_required:,}gp"
+                ),
+                "constraint": (
+                    "budget or expected fillability"
+                    if qty <= 0 else "profit and capital-return floors"
                 ),
             })
             continue

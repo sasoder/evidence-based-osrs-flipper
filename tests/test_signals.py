@@ -7,6 +7,40 @@ from unittest.mock import patch
 
 from flipper import signals
 
+# One UTC day as four 6h buckets. Bucket 0 is the entry window: it is the only bucket whose
+# low is reachable at buy=101, so a block that opens on any other bucket cannot fill — which is
+# what makes wrong-phase starts detectable rather than merely different.
+_SELLS_OUT = [
+    {"avgLowPrice": 100, "avgHighPrice": 105, "lowPriceVolume": 100, "highPriceVolume": 0},
+    {"avgLowPrice": 105, "avgHighPrice": 130, "lowPriceVolume": 0, "highPriceVolume": 100},
+    {"avgLowPrice": 105, "avgHighPrice": 110, "lowPriceVolume": 0, "highPriceVolume": 0},
+    {"avgLowPrice": 105, "avgHighPrice": 110, "lowPriceVolume": 0, "highPriceVolume": 0},
+]
+_NEVER_SELLS = [
+    {"avgLowPrice": 100, "avgHighPrice": 105, "lowPriceVolume": 100, "highPriceVolume": 0},
+    *[
+        {"avgLowPrice": 90, "avgHighPrice": 95, "lowPriceVolume": 0, "highPriceVolume": 100}
+        for _ in range(3)
+    ],
+]
+
+
+def _on_grid(rows: list[dict], step_seconds: int) -> list[dict]:
+    """Stamp rows onto a gapless timestamp grid, as a complete API response would be."""
+    start = int(time.time()) - len(rows) * step_seconds
+    return [{**row, "timestamp": start + index * step_seconds}
+            for index, row in enumerate(rows)]
+
+
+def _time_rows(day: list[dict], days: int) -> list[dict]:
+    """6h rows on a real UTC grid, bucket 0 of each day aligned to 00:00."""
+    start = (int(time.time()) // 86400 - days) * 86400
+    return [
+        {**dict(day[index % 4]), "timestamp": start + index * 21600}
+        for index in range(days * 4)
+    ]
+
+
 def _rows(n: int = 80) -> list[dict]:
     start = int(time.time()) - n * 3600
     return [
@@ -110,6 +144,7 @@ class SignalTests(unittest.TestCase):
                     for _ in range(14)
                 ],
             ])
+        rows = _on_grid(rows, 3600)
 
         evidence = signals._patient_order_replay(
             rows,
@@ -133,6 +168,165 @@ class SignalTests(unittest.TestCase):
         # Capital cost: utility is profit minus the reservation charge on posted gp.
         self.assertLess(evidence["mean_utility_gp"], evidence["mean_profit_gp"])
 
+    def test_patient_replay_uses_the_requested_timestep_duration(self) -> None:
+        block = [
+            {
+                "avgLowPrice": 100 if index == 0 else 105,
+                "avgHighPrice": 130 if index == 48 else 110,
+                "lowPriceVolume": 100 if index == 0 else 0,
+                "highPriceVolume": 100 if index == 48 else 0,
+            }
+            for index in range(192)  # 4h entry + 12h hold at five-minute resolution
+        ]
+
+        evidence = signals._patient_order_replay(
+            _on_grid(block * 3, 300),
+            buy=101,
+            sell=129,
+            quantity=5,
+            entry_hours=4,
+            participation=0.10,
+            timestep="5m",
+        )
+
+        self.assertEqual(evidence["blocks"], 3)
+        self.assertEqual(evidence["opportunity_episodes"], 3)
+        self.assertTrue(evidence["qualifies"])
+
+    def test_patient_replay_counts_only_blocks_it_actually_entered(self) -> None:
+        # A graded block whose entry never touched is still evidence — it just is not an
+        # opportunity. Counting it would pad the quorum `qualifies` requires.
+        rows = []
+        for block in range(3):
+            entry_low = 105 if block == 1 else 100  # the middle block never fills
+            rows.extend([
+                {"avgLowPrice": entry_low, "avgHighPrice": 105,
+                 "lowPriceVolume": 100, "highPriceVolume": 0},
+                *[
+                    {"avgLowPrice": 105, "avgHighPrice": 110,
+                     "lowPriceVolume": 0, "highPriceVolume": 0}
+                    for _ in range(3)
+                ],
+                {"avgLowPrice": 105, "avgHighPrice": 130,
+                 "lowPriceVolume": 0, "highPriceVolume": 100},
+                *[
+                    {"avgLowPrice": 105, "avgHighPrice": 110,
+                     "lowPriceVolume": 0, "highPriceVolume": 0}
+                    for _ in range(11)
+                ],
+            ])
+
+        evidence = signals._patient_order_replay(
+            _on_grid(rows, 3600), buy=101, sell=129, quantity=10,
+            entry_hours=4, participation=0.10,
+        )
+
+        self.assertEqual(evidence["blocks"], 3)
+        self.assertEqual(evidence["opportunity_episodes"], 2)
+
+    def test_patient_replay_skips_a_block_that_spans_more_than_its_row_count(self) -> None:
+        # Half of all cached 1h blocks span more wall-clock time than their row count implies.
+        # A stretched block charges the wrong capital hours and force-exits at a price from the
+        # wrong hour, so it is not evidence about this order.
+        rows = []
+        for _ in range(3):
+            rows.extend([
+                {"avgLowPrice": 100, "avgHighPrice": 105,
+                 "lowPriceVolume": 100, "highPriceVolume": 0},
+                {"avgLowPrice": 105, "avgHighPrice": 130,
+                 "lowPriceVolume": 0, "highPriceVolume": 100},
+                *[
+                    {"avgLowPrice": 105, "avgHighPrice": 110,
+                     "lowPriceVolume": 0, "highPriceVolume": 0}
+                    for _ in range(14)
+                ],
+            ])
+        rows = _on_grid(rows, 3600)
+        for row in rows[20:]:  # a two-hour hole inside the second block
+            row["timestamp"] += 7200
+
+        evidence = signals._patient_order_replay(
+            rows, buy=101, sell=129, quantity=10, entry_hours=4, participation=0.10,
+        )
+
+        self.assertEqual(evidence["blocks"], 2)
+
+    def test_patient_replay_drops_a_block_whose_forced_exit_never_printed(self) -> None:
+        # Inventory remains and no low printed anywhere in the hold segment. The old code
+        # wrote off the full purchase price (10 * -101), which then sized the position.
+        rows = []
+        for _ in range(3):
+            rows.extend([
+                {"avgLowPrice": 100, "avgHighPrice": 105,
+                 "lowPriceVolume": 100, "highPriceVolume": 0},
+                *[
+                    {"avgLowPrice": None, "avgHighPrice": 110,
+                     "lowPriceVolume": 0, "highPriceVolume": 0}
+                    for _ in range(15)
+                ],
+            ])
+
+        evidence = signals._patient_order_replay(
+            _on_grid(rows, 3600), buy=101, sell=129, quantity=10,
+            entry_hours=4, participation=0.10,
+        )
+
+        self.assertEqual(evidence["blocks"], 0)
+        self.assertEqual(evidence["worst_profit_gp"], 0)
+        self.assertFalse(evidence["qualifies"])
+
+    def test_patient_replay_keeps_an_early_sellout_when_the_terminal_low_is_null(self) -> None:
+        # The position cleared before the deadline, so a missing terminal print says nothing
+        # about it. Discarding the block would delete a successful observation.
+        rows = []
+        for _ in range(3):
+            rows.extend([
+                {"avgLowPrice": 100, "avgHighPrice": 105,
+                 "lowPriceVolume": 100, "highPriceVolume": 0},
+                *[
+                    {"avgLowPrice": 105, "avgHighPrice": 110,
+                     "lowPriceVolume": 0, "highPriceVolume": 0}
+                    for _ in range(3)
+                ],
+                # First row of the sell segment clears the whole position.
+                {"avgLowPrice": 105, "avgHighPrice": 130,
+                 "lowPriceVolume": 0, "highPriceVolume": 100},
+                *[
+                    {"avgLowPrice": None, "avgHighPrice": 110,
+                     "lowPriceVolume": 0, "highPriceVolume": 0}
+                    for _ in range(11)
+                ],
+            ])
+
+        evidence = signals._patient_order_replay(
+            _on_grid(rows, 3600), buy=101, sell=129, quantity=10,
+            entry_hours=4, participation=0.10,
+        )
+
+        self.assertEqual(evidence["blocks"], 3)
+        self.assertGreater(evidence["worst_profit_gp"], 0)
+
+    def test_probe_posts_and_replays_the_lower_band_order(self) -> None:
+        now = int(time.time())
+        with (
+            patch("flipper.prices.mapping_by_id",
+                  return_value={1: {"id": 1, "name": "Test item", "limit": 100}}),
+            patch("flipper.prices.timeseries", return_value=_rows()),
+            patch("flipper.prices.latest", return_value={
+                "1": {"low": 103, "high": 200, "lowTime": now, "highTime": now}
+            }),
+            patch("flipper.prices.one_hour", return_value={
+                "1": {"lowPriceVolume": 100, "highPriceVolume": 100}
+            }),
+        ):
+            signal = signals.item_signal(1)
+
+        assert signal is not None
+        self.assertFalse(signal["ready_to_buy"])
+        self.assertTrue(signal["patient_probe_ready"])
+        self.assertEqual(signal["entry_price"], signal["buy_band"])
+        self.assertEqual(signal["exit_price"], signal["sell_band"])
+
     def test_bid_inside_the_ready_window_posts_at_the_live_low(self) -> None:
         # The live low (102) sits 2% above the band (100), inside PATIENT_READY_MAX_DISTANCE_PCT.
         # The order that gets posted — and that the replay evidence validates — is the live one, so
@@ -155,6 +349,9 @@ class SignalTests(unittest.TestCase):
         self.assertEqual(signal["entry_price"], 102)
         self.assertTrue(signal["ready_to_buy"])
         self.assertFalse(signal["patient_probe_ready"])
+        self.assertEqual(signal["capital_required"], 102 * signal["fillable_qty"])
+        self.assertEqual(signal["liquidity_profit"], signal["margin"] * signal["fillable_qty"])
+        self.assertEqual(signal["roi_pct"], round(signal["margin"] / 102 * 100, 2))
 
     def test_patient_bid_not_ready_when_live_low_far_above_band(self) -> None:
         # Live low 120 is 20% above the band — the bid would never fill in the window. Not ready.
@@ -308,6 +505,22 @@ class SignalTests(unittest.TestCase):
         self.assertEqual(evidence["win_rate"], 1)
         self.assertGreater(evidence["mean_profit_per_unit"], 0)
 
+    def test_active_replay_does_not_force_exit_an_incomplete_tail_trade(self) -> None:
+        rows = [
+            {"avgLowPrice": 100, "avgHighPrice": 105},
+            {"avgLowPrice": 104, "avgHighPrice": 120},
+            {"avgLowPrice": 110, "avgHighPrice": 115},
+            {"avgLowPrice": 100, "avgHighPrice": 105},
+            {"avgLowPrice": 104, "avgHighPrice": 120},
+            {"avgLowPrice": 110, "avgHighPrice": 115},
+            {"avgLowPrice": 100, "avgHighPrice": 105},
+        ]
+
+        evidence = signals._active_replay_evidence(rows, buy=101, sell=119)
+
+        self.assertEqual(evidence["trades"], 2)
+        self.assertEqual(evidence["opportunity_episodes"], 2)
+
     def test_time_of_day_signal_requires_profitable_holdout_window(self) -> None:
         step = 6 * 3600
         end = int(time.time()) // step * step
@@ -355,40 +568,15 @@ class SignalTests(unittest.TestCase):
         self.assertEqual(signal["expected_profit"], signal["replay_evidence"]["mean_profit_gp"])
 
     def test_time_replay_charges_unfilled_cash_and_forces_inventory_out(self) -> None:
-        rows = []
-        for block in range(3):
-            rows.extend([
-                {
-                    "avgLowPrice": 100,
-                    "avgHighPrice": 105,
-                    "lowPriceVolume": 100,
-                    "highPriceVolume": 0,
-                },
-                {
-                    "avgLowPrice": 105,
-                    "avgHighPrice": 130,
-                    "lowPriceVolume": 0,
-                    "highPriceVolume": 100,
-                },
-                *[
-                    {
-                        "avgLowPrice": 105,
-                        "avgHighPrice": 110,
-                        "lowPriceVolume": 0,
-                        "highPriceVolume": 0,
-                    }
-                    for _ in range(3)
-                ],
-            ])
+        rows = _time_rows(_SELLS_OUT, days=4)
 
         evidence = signals._time_replay_evidence(
-            rows,
-            buy=101,
-            sell=129,
-            quantity=5,
+            rows, buy=101, sell=129, quantity=5, entry_bucket=0,
         )
 
         self.assertEqual(evidence["blocks"], 3)
+        # Four entry buckets touch, but the fourth has no complete horizon after it and so
+        # has no observable outcome. Only graded entries count toward the quorum.
         self.assertEqual(evidence["opportunity_episodes"], 3)
         self.assertTrue(evidence["qualifies"])
         self.assertLess(evidence["mean_utility_gp"], evidence["mean_profit_gp"])
@@ -396,22 +584,78 @@ class SignalTests(unittest.TestCase):
     def test_time_replay_books_a_loss_when_the_target_never_trades(self) -> None:
         # The sell target is never reached, so every block ends by crossing back to the low side.
         # Without a forced exit the replay would report a costless zero instead of the real loss.
-        rows = []
-        for block in range(3):
-            rows.extend([
-                {"avgLowPrice": 100, "avgHighPrice": 105,
-                 "lowPriceVolume": 100, "highPriceVolume": 0},
-                *[
-                    {"avgLowPrice": 90, "avgHighPrice": 95,
-                     "lowPriceVolume": 0, "highPriceVolume": 100}
-                    for _ in range(4)
-                ],
-            ])
+        rows = _time_rows(_NEVER_SELLS, days=4)
 
-        evidence = signals._time_replay_evidence(rows, buy=101, sell=129, quantity=5)
+        evidence = signals._time_replay_evidence(
+            rows, buy=101, sell=129, quantity=5, entry_bucket=0,
+        )
 
         self.assertEqual(evidence["blocks"], 3)
         self.assertLess(evidence["worst_profit_gp"], 0)
+        self.assertFalse(evidence["qualifies"])
+
+    def test_time_replay_skips_a_block_whose_horizon_lost_a_bucket(self) -> None:
+        # A missing 6h bucket makes the next five rows span 30h, not 24h. Grading it would
+        # charge 24h of capital against a horizon that ran a quarter longer.
+        rows = _time_rows(_SELLS_OUT, days=4)
+        del rows[6]
+
+        evidence = signals._time_replay_evidence(
+            rows, buy=101, sell=129, quantity=5, entry_bucket=0,
+        )
+
+        # Day 1's block is the one that spans the gap; days 0 and 2 survive.
+        self.assertEqual(evidence["blocks"], 2)
+
+    def test_time_replay_start_follows_the_utc_bucket_not_the_row_stride(self) -> None:
+        # After a dropped bucket, "four rows later" is no longer "one day later". A strided
+        # walk keeps its old phase and opens a block on bucket 1, where the low is 105 and
+        # the order cannot fill — a zero-profit block that never happened. Every graded block
+        # must still begin in the entry window, so every one of them fills and sells out.
+        rows = _time_rows(_SELLS_OUT, days=6)
+        del rows[6]
+
+        evidence = signals._time_replay_evidence(
+            rows, buy=101, sell=129, quantity=5, entry_bucket=0,
+        )
+
+        self.assertEqual(evidence["blocks"], 4)
+        self.assertGreater(evidence["worst_profit_gp"], 0)
+
+    def test_time_replay_keeps_an_early_sellout_when_the_terminal_low_is_null(self) -> None:
+        # Inventory already cleared, so the missing terminal print is irrelevant to the
+        # result. Discarding the block would delete a successful observation.
+        rows = _time_rows(_SELLS_OUT, days=4)
+        for index in (4, 8, 12):  # each block's terminal bucket prints nothing
+            rows[index]["avgLowPrice"] = None
+
+        evidence = signals._time_replay_evidence(
+            rows, buy=101, sell=129, quantity=5, entry_bucket=0,
+        )
+
+        # Day 0 fills and clears before the deadline, so its missing terminal print is
+        # irrelevant to the result; days 1 and 2 cannot fill and score a bare zero.
+        self.assertEqual(evidence["blocks"], 3)
+        self.assertGreater(evidence["mean_profit_gp"], 0)
+        # Three graded blocks, but only one of them was ever entered.
+        self.assertEqual(evidence["opportunity_episodes"], 1)
+
+    def test_time_replay_drops_a_block_whose_forced_exit_never_printed(self) -> None:
+        # Day 0 fills, never reaches the target, and then nothing prints on the low side for
+        # the whole 24h horizon — the forced exit is unobservable. The old code wrote off the
+        # entire purchase price (5 * -101 = -505) and that number went straight into position
+        # sizing via worst_profit_gp.
+        rows = _time_rows(_NEVER_SELLS, days=4)
+        for index, row in enumerate(rows):
+            if index % 4 or index:
+                row["avgLowPrice"] = None
+
+        evidence = signals._time_replay_evidence(
+            rows, buy=101, sell=129, quantity=5, entry_bucket=0,
+        )
+
+        self.assertEqual(evidence["blocks"], 2)  # the two silent zero-fill days remain
+        self.assertEqual(evidence["worst_profit_gp"], 0)
         self.assertFalse(evidence["qualifies"])
 
 def _trend_rows(start_mid: int, end_mid: int, n: int = 120, spread: int = 20) -> list[dict]:
