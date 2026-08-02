@@ -40,6 +40,11 @@ uv run python -m flipper.sync
 uv run python -m flipper.runelite status
 ```
 
+If Flipping Utilities was enabled or configured while the player was already logged in, ask them
+to log out of the character and log back in once. A full RuneLite restart and opening the Grand
+Exchange are unnecessary. After the next one-minute autosave, rerun both sync and status before
+continuing setup; this login cycle lets Flipping Utilities bootstrap offers that were already open.
+
 With normal RuneLite open and logged in, status should name the account and report
 `slot_source: flipping_utilities` after the next one-minute autosave. `offers: 0` is valid when
 every slot is empty. If the snapshot already resolves the intended profile, do not reinstall or
