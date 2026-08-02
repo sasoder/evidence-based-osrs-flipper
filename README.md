@@ -17,28 +17,29 @@ Inspired by Leverage In Action's
 
 ## Getting started
 
-You need Python 3.11+ and a coding agent like [Claude](https://claude.com/download) or [ChatGPT](https://openai.com/index/introducing-the-codex-app/), unless you want to use the CLI yourself. Clone the repo with Git to keep the repo up to date easily, or download the ZIP to get started without it. The examples use
-[uv](https://docs.astral.sh/uv/). If you already manage Python with venv or conda, run the same
-commands with `python` instead of `uv run python`.
+You need RuneLite, Python 3.11+, and a coding agent like
+[Claude](https://claude.com/download) or [Codex](https://openai.com/codex/).
 
-1. **Get the repo** (clone it, or [download it as a ZIP](https://github.com/sasoder/evidence-based-osrs-flipper/archive/refs/heads/main.zip) and unzip it)
-  ```bash
+1. **Get the repo.** Clone it, or [download the ZIP](https://github.com/sasoder/evidence-based-osrs-flipper/archive/refs/heads/main.zip) and unzip it.
+
+   ```bash
    git clone https://github.com/sasoder/evidence-based-osrs-flipper.git
    cd evidence-based-osrs-flipper
-  ```
-2. **Launch normal RuneLite, enable its built-in Grand Exchange plugin, and log in once.** The
-  plugin is included with RuneLite, so there is nothing extra to download. The Plugin Hub version
-  of Flipping Utilities is optional but strongly recommended: enable auto-save and set it to one
-  minute. It supplies fast slot/fill/timestamp updates, while RuneLite core confirms exact prices.
-  Without Flipping Utilities, the harness still works but changes can take about five minutes to
-  reach RuneLite's profile file. No fork or development client is needed.
-3. **Open the repo in your agent and run `/setup`.** It checks Python and the local RuneLite data.
-  Once everything is connected, setup asks for your OSRS Wiki contact, your RSN if it
-  finds more than one RuneLite profile, and any subreddits you want the optional research pass to
-  read. It saves those answers in gitignored `config/settings.json`. With one profile and no Reddit
-  sources, you do not need a config file at all.
+   ```
 
-Then just talk to it: *"50m liquid, what should I buy?"*
+2. **Open RuneLite and enable Grand Exchange.** Installing Flipping Utilities from the Plugin Hub
+   is recommended; enable auto-save and set its interval to one minute.
+
+   <p align="center">
+     <img src="images/runelite-grand-exchange.png" alt="Grand Exchange enabled in RuneLite" width="230">
+     <img src="images/flipping-utilities-plugin-hub.png" alt="Flipping Utilities in the RuneLite Plugin Hub" width="230">
+     <img src="images/flipping-utilities-autosave.png" alt="Flipping Utilities auto-save interval set to one minute" width="240">
+   </p>
+
+3. **Open the repo in your agent and run `/setup`.** Follow the prompts, then log in and open the
+   Grand Exchange once.
+
+Then just talk to it: *"I have 50m spendable outside the GE; what should I buy?"*
 
 ## Using it
 
@@ -65,37 +66,22 @@ commits (`capital`), and its expected after-tax profit, so you can check the cal
 
 ## How it decides
 
-The LLM is not choosing trades. The planner (`flipper.plan`) does the ranking, sizing, open-offer checks, and formatting. The agent just collects your inputs, runs it once, and presents the results.
-
-Patient buy/sell bands come from percentiles over recent hourly prices (buy near the 35th percentile of instant-sells, sell near the 75th of instant-buys). Live plans post at today's executable prices when those sit close enough to the band, and every margin is after GE tax. Open offers are checked before anything new is suggested: zero-fill buys cancel after 4h, old sells move toward the live bid, and the hard exit is counted even at a loss.
-
-Each strategy has its own checks:
+The agent does not pick trades itself. A deterministic planner checks your open offers first, then
+ranks and sizes new trades using current prices, recent history, liquidity, GE tax, and downside.
+Weak opportunities are rejected rather than used to fill slots.
 
 
-| strategy    | horizon                     | must pass                                                                                                                                                                                                 |
-| ----------- | --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **patient** | 2-6h holds, 12h hard exit   | live price near the buy band; 6h regime/trend check; today's buy/sell prices replay profitably over recent history, including forced exits                                                                |
-| **active**  | 15-90m, items from 1m up    | fresh two-sided quotes, ROI floor, real flow on both sides; repeatable positive replay; sized so forced-exit downside fits a shared lane risk budget                                                       |
-| **time**    | recurring UTC windows       | picked on older data, still profitable on newer holdout data, and today's prices also clear a replay with forced exits                                                                                    |
-| **probe**   | small near-band experiments | same replay gate as patient, but fill reachability is unvalidated; capped at 5% of liquid in total                                                                                                        |
+| strategy    | approach                                      |
+| ----------- | --------------------------------------------- |
+| **patient** | Buy near a historical band and hold for hours |
+| **active**  | Short, liquid flips with fresh two-sided flow |
+| **time**    | Recurring opportunities at specific UTC hours |
+| **probe**   | Small tests of promising patient entries     |
 
 
-Items compete for free slots by expected realized gp/hour from that replayed evidence, not just the live spread. Quantity is capped by GE limit, expected fills, budget, and (for patient/time) per-position downside; active shares one lane-wide downside budget. Each slot must clear a flat 1,000gp profit floor and a capital-return floor. When filters leave liquid unspent, the plan names the binding constraint instead of inventing weak fills.
-
-Each call is also saved as an intent with its item, side, quantity, intended price, strategy,
-reason, and prediction. On the next fresh Flipping Utilities autosave, the harness matches item,
-side, and quantity; changing the price will not stop it from binding the intent. Its intended price
-is clearly marked provisional until RuneLite core confirms what was actually entered. The planner
-still gives you one concrete price because the call needs to be something you can execute and measure. Later runs grade it against your real
-fills. Items that have worked well for you before can join the candidate pool and use your own fill
-history for sizing, but they still have to pass the same checks as everything else.
-
-Partial fills stay attached to the strategy that opened them. The planner may keep the remaining
-buy when its entry is still valid; if the remainder should be cancelled or repriced, it instead
-cancels that remainder and creates a sell instruction for exactly the units already acquired.
-Tracked buys collected between runs are recovered from RuneLite's terminal trade history rather
-than disappearing from the plan. Filled sell offers are collected to free their slots, and their
-net proceeds—plus refunds from buys the plan cancels—join the same run's deployable budget.
+Every recommendation is an exact order with a reason, target, and deadline. Later runs reconcile
+it with real offers and fills, including partial fills and completed trades, so the planner can
+hold, cancel, collect, reprice, or sell the position as conditions change.
 
 ## CLI
 
@@ -116,7 +102,7 @@ uv run python -m flipper.plan --cash 50000000 --strategies active --max-new-slot
 
 Your RuneLite snapshot, optional Flipping Utilities history, and reconciled offer state stay on
 disk and out of git: `data/incoming/runelite/`, `data/incoming/flipping/`, and `state/`.
-On Windows, RuneLite's normal location is `%USERPROFILE%\.runelite`; the same automatic discovery
+On Windows, RuneLite's default data directory is `%USERPROFILE%\.runelite`; automatic discovery
 works there, with `RUNELITE_HOME` available for non-default installations.
 
 ## Why "Evidence"?

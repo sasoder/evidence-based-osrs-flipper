@@ -962,9 +962,6 @@ def plan(cash: int, offers: list[dict] | None = None,
     boost = {b["id"] for b in overlay.get("boost", [])}
     avoid = {a["id"] for a in overlay.get("avoid", [])}
 
-    # --cash is spendable GP outside the GE. Triage adds only money released by actions
-    # this plan actually instructs the user to execute.
-    run_budget = cash
     fill_window_hours = (
         OVERNIGHT_FILL_WINDOW_HOURS if horizon == "overnight" else signals.FILL_WINDOW_HOURS
     )
@@ -975,7 +972,7 @@ def plan(cash: int, offers: list[dict] | None = None,
     profit_floor = MIN_SLOT_PROFIT_GP
 
     offer_triage = [_triage_offer(o, cost_map, strategy_by_item) for o in offers]
-    projection = _project_after_triage(offers, offer_triage, run_budget)
+    projection = _project_after_triage(offers, offer_triage, cash)
     run_budget = projection["budget_left"]
     recovered_sells = []
     for recovered in recovered_buys[:projection["free_slots"]]:
