@@ -4,7 +4,7 @@
 
 **Evidence-Based OSRS Flipper is an OSRS Grand Exchange flipping advisor.** It reads RuneLite's
 local GE state, checks OSRS Wiki prices, and gives you exact buy/sell/cancel/reprice
-instructions to type into the GE. It never touches the game. You still place every offer yourself.
+instructions to type into the GE. It never touches the game, you still place every offer yourself.
 
 
 <p align="center">
@@ -33,8 +33,7 @@ but you can also use the planner directly from its CLI. The commands below use
 
 2. **Open RuneLite and make sure its built-in Grand Exchange plugin is enabled.** Flipping
    Utilities from the Plugin Hub is optional but highly recommended for faster slot and fill
-   updates. Enable auto-save and set its interval to one minute. Only standard RuneLite plugins are
-   used.
+   updates. Enable auto-save and set its interval to one minute.
 
    <p align="center">
      <img src="images/runelite-grand-exchange.png" alt="Grand Exchange enabled in RuneLite" width="230">
@@ -47,20 +46,19 @@ but you can also use the planner directly from its CLI. The commands below use
    checks Python and RuneLite. If you prefer not to use an agent, run the sync and planner commands
    in the CLI section below.
 
-With an agent, you can then ask: *"I have 50m spendable outside the GE. What should I buy?"*
+With an agent, you can just ask: *"I have 50m cash, what should I buy?"*
 
 ## Using it
 
 Typical requests, in plain chat:
 
-- **"I have 50m spendable outside the GE. What should I do?"**: syncs your data, checks every open offer (hold, cancel, collect, or reprice), then fills free slots. Offer-only review works the same way with no cash: *"what should I do with my current offers?"*
-- **"Are the items I usually flip still good right now?"**: if you use Flipping Utilities, it reads your history, re-checks those winners against today's prices and the same gates, and only keeps ones that still clear.
+- **"I have 50m, what should I do?"**: syncs your data, checks every open offer (hold, cancel, collect, or reprice), then fills free slots. Offer-only review works the same way with no cash: *"what should I do with my current offers?"*
+- **"Are the items I usually flip still good right now?"**: if you use Flipping Utilities, it reads your history, re-checks those winners against today's prices and the same gates, and only keeps ones that still pass.
 - **"Going to bed, 120m."**: sizes positions for a 12-hour window.
 - **"Only active flips, max 5 slots."**: sends those preferences to the planner as hard limits.
 - **"Anything being talked about that's worth flipping?"**: checks the OSRS news feed and Reddit for context. Research can re-rank trades that already passed the evidence gates (and is the only way a breaking market gets bought into), but it never invents a trade.
 
-If your message doesn't include the numbers, the agent asks: spendable GP outside GE offers, whether you'll be
-around, which strategies, and slot cap. A plan looks like this:
+If your message doesn't include specifics, the agent asks for everything it needs. A plan looks like this:
 
 
 | action | item             | qty | price   | capital   | exp. profit | live lo/hi      | sell target | deadline  | basis                                  |
