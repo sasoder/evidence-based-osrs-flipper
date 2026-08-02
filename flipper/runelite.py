@@ -370,12 +370,14 @@ def _match_intent(
     qty: int,
     price: int | None,
     pending: list[dict],
+    *,
+    partial: bool = False,
 ) -> dict | None:
     candidates = [
         intent for intent in pending
         if _to_int(intent["item_id"]) == item_id
         and intent["side"] == side
-        and _to_int(intent["qty"]) == qty
+        and (_to_int(intent["qty"]) >= qty if partial else _to_int(intent["qty"]) == qty)
     ]
     if not candidates:
         return None
@@ -403,14 +405,16 @@ def read_open_offers() -> list[dict]:
     fu_snapshot = _fu_snapshot(synced_ms)
     updates, fu_ms = fu_snapshot or ({}, 0)
     core_offers = profile.get("offers", {})
-    slots = sorted(updates) if fu_snapshot else sorted(int(slot) for slot in core_offers)
+    prefer_fu = fu_snapshot is not None and fu_ms >= core_ms
+    slots = sorted(updates) if prefer_fu else sorted(int(slot) for slot in core_offers)
     current: dict[str, dict] = {}
     out: list[dict] = []
 
     for slot in slots:
         update = updates.get(slot)
         core = core_offers.get(str(slot))
-        if update:
+        if prefer_fu:
+            assert update is not None
             state = str(update["st"]).upper()
             item_id = _to_int(update["id"])
             side = "buy" if _offer_is_buy(update) else "sell"
@@ -421,6 +425,7 @@ def read_open_offers() -> list[dict]:
             uuid = update.get("uuid")
             identity = f"fu:{uuid}" if uuid else f"fu:{slot}:{item_id}:{side}:{qty}"
         else:
+            assert core is not None
             state = str(core["state"]).upper()
             item_id = _to_int(core["itemId"])
             side = _side(state)
@@ -428,7 +433,15 @@ def read_open_offers() -> list[dict]:
             filled_qty = _to_int(core["quantitySold"])
             source = "runelite"
             observed_ms = core_ms
-            identity = f"core:{slot}:{item_id}:{side}:{qty}:{_to_int(core['price'])}"
+            if update and not _matches(core, _to_int(update["id"]),
+                                       "buy" if _offer_is_buy(update) else "sell",
+                                       _to_int(update["tQIT"])):
+                update = None
+            uuid = update.get("uuid") if update else None
+            identity = (
+                f"fu:{uuid}" if uuid else
+                f"core:{slot}:{item_id}:{side}:{qty}:{_to_int(core['price'])}"
+            )
 
         old = previous_offers.get(str(slot))
         same_offer = bool(old and old["identity"] == identity)
@@ -547,6 +560,7 @@ def read_open_offers() -> list[dict]:
                     qty,
                     _to_int(trade["p"]),
                     [row for row in pending if row["intent_id"] not in consumed],
+                    partial=True,
                 )
             if linked:
                 consumed.add(linked["intent_id"])
@@ -563,7 +577,7 @@ def read_open_offers() -> list[dict]:
     _save_state({
         "profile_key": profile["key"],
         "rsn": rsn,
-        "slot_source": "flipping_utilities" if fu_snapshot else "runelite",
+        "slot_source": "flipping_utilities" if prefer_fu else "runelite",
         "flipping_utilities_stored_at": (
             datetime.fromtimestamp(fu_ms / 1000, tz=timezone.utc).isoformat()
             if fu_snapshot else None

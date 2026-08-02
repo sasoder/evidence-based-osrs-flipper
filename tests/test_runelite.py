@@ -234,6 +234,51 @@ class RuneLiteTests(unittest.TestCase):
 
         self.assertEqual(offer["source"], "runelite")
 
+    def test_newer_core_snapshot_overrides_fresh_but_older_flipping_utilities(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._snapshot(root, offers={"1": {
+                "itemId": 1127, "quantitySold": 0, "totalQuantity": 1,
+                "price": 1, "spent": 0, "state": "BUYING",
+            }}, generated_at="2026-08-02T07:15:00+00:00")
+            flipping = root / "flipping"
+            flipping.mkdir()
+            flipping.joinpath("Evidence.json").write_text(json.dumps({
+                "lastStoredAt": 1785654840000,
+                "trades": [],
+                "lastOffers": {},
+            }))
+
+            offers = self._read(root)
+
+        self.assertEqual(len(offers), 1)
+        self.assertEqual(offers[0]["source"], "runelite")
+
+    def test_newer_core_snapshot_keeps_matching_flipping_utilities_timing(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._snapshot(root, offers={"1": {
+                "itemId": 1127, "quantitySold": 0, "totalQuantity": 1,
+                "price": 1, "spent": 0, "state": "BUYING",
+            }}, generated_at="2026-08-02T07:15:00+00:00")
+            flipping = root / "flipping"
+            flipping.mkdir()
+            flipping.joinpath("Evidence.json").write_text(json.dumps({
+                "lastStoredAt": 1785654840000,
+                "trades": [],
+                "lastOffers": {"1": {
+                    "uuid": "same-offer", "id": 1127, "st": "BUYING",
+                    "tQIT": 1, "cQIT": 0, "tradeStartedAt": 1785654780000,
+                    "beforeLogin": False,
+                }},
+            }))
+
+            offer = self._read(root)[0]
+
+        self.assertEqual(offer["source"], "runelite")
+        self.assertFalse(offer["age_is_floor"])
+        self.assertEqual(offer["age_hours"], 0.03)
+
     def test_quantity_growth_is_dated_at_the_next_sync(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -295,6 +340,30 @@ class RuneLiteTests(unittest.TestCase):
                 pending = intents.read_intents("Evidence")
 
         self.assertEqual(state["completed"][0]["intent"]["intent_id"], "instant")
+        self.assertEqual(pending, [])
+
+    def test_partially_filled_trade_history_matches_larger_intent(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._snapshot(root, offers={})
+            self._read(root)
+            with patch.object(intents, "INTENT_DIR", root / "intents"):
+                intents.write_intents([{
+                    "intent_id": "partial", "item_id": 7, "side": "buy", "qty": 10,
+                    "price": 100, "strategy": "active-margin",
+                }], rsn="Evidence")
+            self._snapshot(root, offers={}, trades=[
+                {"b": True, "i": 7, "q": 4, "p": 99, "t": 1785655000000},
+            ], generated_at="2026-08-02T09:20:00+00:00")
+
+            self._read(root)
+            with patch.object(runelite, "_STATE_PATH", root / "state.json"):
+                recovered = runelite.read_recovered_buys()
+            with patch.object(intents, "INTENT_DIR", root / "intents"):
+                pending = intents.read_intents("Evidence")
+
+        self.assertEqual(recovered[0]["filled_qty"], 4)
+        self.assertEqual(recovered[0]["intent_id"], "partial")
         self.assertEqual(pending, [])
 
     def test_core_trade_history_supplies_flips_without_flipping_utilities(self) -> None:
