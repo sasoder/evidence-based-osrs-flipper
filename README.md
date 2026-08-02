@@ -28,7 +28,8 @@ You need RuneLite, Python 3.11+, and a coding agent like
    ```
 
 2. **Open RuneLite and enable Grand Exchange.** Installing Flipping Utilities from the Plugin Hub
-   is recommended; enable auto-save and set its interval to one minute.
+   is recommended for faster slot and fill updates; enable auto-save and set its interval to one
+   minute.
 
    <p align="center">
      <img src="images/runelite-grand-exchange.png" alt="Grand Exchange enabled in RuneLite" width="230">
