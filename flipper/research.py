@@ -21,7 +21,6 @@ import argparse
 import json
 import re
 import sys
-import time
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
@@ -39,8 +38,6 @@ REDDIT_LIMIT = 12
 # descriptive UA, so this browser UA is reddit-only.
 REDDIT_UA = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 "
              "(KHTML, like Gecko) Version/17.0 Safari/605.1.15")
-REDDIT_REQUEST_DELAY = 6.0   # seconds between subreddit fetches — polite spacing avoids 429
-REDDIT_RETRY_BACKOFF = 12.0  # extra wait before a single retry when a sub still 429s
 
 _TAG_RE = re.compile(r"<[^>]+>")
 _WS_RE = re.compile(r"\s+")
@@ -95,23 +92,27 @@ def news(limit: int = 10) -> dict:
         return _err("osrs_news", exc, url=url)
 
 
-def _reddit_via_rss(sub: str, limit: int) -> list[dict]:
-    """r/<sub> hot posts from the public RSS/Atom feed. No score/comments (RSS omits them) —
-    titles are the catalyst signal. Uses the plain /.rss path + a browser UA (the /hot.rss path
-    and the descriptive wiki UA both 403)."""
-    url = f"https://www.reddit.com/r/{sub}/.rss"
+def _reddit_via_rss(subs: list[str], limit: int) -> list[dict]:
+    """Hot posts from one combined Reddit RSS feed, capped per configured subreddit."""
+    url = f"https://www.reddit.com/r/{'+'.join(subs)}/.rss?limit=100"
     root = ET.fromstring(_fetch(url, REDDIT_UA))
     ns = {"a": "http://www.w3.org/2005/Atom"}
+    configured = {sub.casefold(): sub for sub in subs}
+    counts = {sub: 0 for sub in subs}
     items = []
     for entry in root.findall("a:entry", ns):
+        category = entry.find("a:category", ns)
+        sub = configured.get((category.get("term") if category is not None else "").casefold())
+        if not sub or counts[sub] >= limit:
+            continue
         link = entry.find("a:link", ns)
         items.append({
             "title": _clean(entry.findtext("a:title", "", ns), 160),
             "published": (entry.findtext("a:published", "", ns) or "").strip(),
             "url": link.get("href") if link is not None else None,
+            "subreddit": sub,
         })
-        if len(items) >= limit:
-            break
+        counts[sub] += 1
     return items
 
 
@@ -122,34 +123,14 @@ def reddit(limit: int | None = None) -> dict:
     subs = RESEARCH.get("subreddit", "2007scape")
     subs = [subs] if isinstance(subs, str) else list(subs)
     limit = limit or REDDIT_LIMIT
+    if not subs:
+        return {"source": "reddit", "ok": True, "items": [], "subreddits": []}
 
-    items, errors = [], []
-    for i, sub in enumerate(subs):
-        if i:
-            time.sleep(REDDIT_REQUEST_DELAY)  # space requests so we don't trip Reddit's rate limit
-        for attempt in range(2):
-            try:
-                sub_items = _reddit_via_rss(sub, limit)
-                for it in sub_items:
-                    it["subreddit"] = sub
-                items.extend(sub_items)
-                break
-            except urllib.error.HTTPError as exc:
-                if exc.code == 429 and attempt == 0:  # one backoff retry on rate-limit
-                    time.sleep(REDDIT_RETRY_BACKOFF)
-                    continue
-                errors.append(f"r/{sub}: {_err('reddit', exc)['error']}")
-                break
-            except Exception as exc:  # noqa: BLE001 - record per-sub failure, keep going
-                errors.append(f"r/{sub}: {_err('reddit', exc)['error']}")
-                break
-
-    if not items and errors:
-        return {"source": "reddit", "ok": False,
-                "subreddits": subs, "error": "; ".join(errors)}
+    try:
+        items = _reddit_via_rss(subs, limit)
+    except Exception as exc:  # noqa: BLE001 - surface a concrete source failure
+        return _err("reddit", exc, subreddits=subs)
     out = {"source": "reddit", "ok": True, "items": items}
-    if errors:
-        out["partial_errors"] = errors
     out["subreddit" if len(subs) == 1 else "subreddits"] = subs[0] if len(subs) == 1 else subs
     return out
 
@@ -158,7 +139,10 @@ def brief() -> dict:
     """One compact digest across every source, with a meta block listing which failed so the
     report can cite concrete blockers instead of claiming research was 'unavailable'."""
     sources = [news(), reddit()]
-    failed = [s["source"] for s in sources if not s.get("ok")]
+    failed = [
+        source["source"] for source in sources
+        if not source.get("ok") or source.get("partial_errors")
+    ]
     return {
         "gathered_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "sources": sources,
