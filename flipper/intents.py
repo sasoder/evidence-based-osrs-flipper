@@ -47,7 +47,6 @@ def intents_from_plan(plan: dict) -> list[dict]:
                 "price": int(row["price"]),
                 "strategy": row.get("strategy"),
                 "note": row.get("reason"),
-                "prediction": row.get("predicted"),
                 "hard_exit_at": row.get("hard_exit_at"),
                 "created_at": plan.get("generated_at"),
             })

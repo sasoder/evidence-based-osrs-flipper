@@ -10,7 +10,8 @@ yourself.
   <img src="images/demo.png" alt="Asking the agent for a flip plan and getting back an action table" width="700">
 </p>
 
-Each recommendation records why it was made and what it expects to happen (direction, target, and deadline). Later runs check those calls against what actually filled.
+Each recommendation records why it was made, its target, and its deadline. Later runs reconcile
+those instructions with the offers and fills RuneLite observed.
 
 Inspired by Leverage In Action's
 ["I Tried Using Data Science to Profit in a Video Game Economy"](https://www.youtube.com/watch?v=FhTLApOoWX8).
@@ -18,7 +19,8 @@ Inspired by Leverage In Action's
 ## Getting started
 
 You need RuneLite, Python 3.11+, and a coding agent like
-[Claude](https://claude.com/download) or [Codex](https://openai.com/codex/).
+[Claude](https://claude.com/download) or [Codex](https://openai.com/codex/). The commands below use
+[uv](https://docs.astral.sh/uv/); with an activated Python environment, omit `uv run`.
 
 1. **Get the repo.** Clone it, or [download the ZIP](https://github.com/sasoder/evidence-based-osrs-flipper/archive/refs/heads/main.zip) and unzip it.
 
@@ -29,8 +31,8 @@ You need RuneLite, Python 3.11+, and a coding agent like
 
 2. **Open RuneLite and make sure its built-in Grand Exchange plugin is enabled.** Flipping
    Utilities from the Plugin Hub is optional but highly recommended for faster slot and fill
-   updates; enable auto-save and set its interval to one minute. No custom plugin or RuneLite fork
-   is needed.
+   updates; enable auto-save and set its interval to one minute. Only standard RuneLite plugins
+   are used.
 
    <p align="center">
      <img src="images/runelite-grand-exchange.png" alt="Grand Exchange enabled in RuneLite" width="230">
@@ -38,8 +40,8 @@ You need RuneLite, Python 3.11+, and a coding agent like
      <img src="images/flipping-utilities-autosave.png" alt="Flipping Utilities auto-save interval set to one minute" width="240">
    </p>
 
-3. **Open the repo in your agent and run `/setup`.** Follow the prompts while it installs what is
-   needed and verifies the RuneLite connection.
+3. **Open the repo in your agent and ask it to set up the project.** Use `/setup` when your agent
+   supports skill commands. Follow the prompts while it verifies Python and the RuneLite connection.
 
 Then just talk to it: *"I have 50m spendable outside the GE; what should I buy?"*
 
@@ -90,6 +92,7 @@ hold, cancel, collect, reprice, or sell the position as conditions change.
 The planner is a plain CLI underneath, if you want a plan without the agent:
 
 ```bash
+uv run python -m flipper.sync
 uv run python -m flipper.plan --cash 50000000 --strategies active --max-new-slots 5 --write-intents --markdown
 ```
 
@@ -124,3 +127,9 @@ wasn't poor.
 ```bash
 uv run python -m unittest
 ```
+
+## Contributing
+
+Pull requests are welcome. Read `AGENTS.md`, keep trade selection inside the deterministic planner,
+run the test suite above, and never commit files from `data/incoming/`, `state/`, or
+`config/settings.json`.

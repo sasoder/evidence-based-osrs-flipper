@@ -46,7 +46,7 @@ TTL_TIMESERIES = 300  # historical points settle quickly
 HISTORY_WORKERS = 24
 
 # In-process memo of per-item timeseries, keyed by (item_id, timestep). A /flip run evaluates the
-# same items across the patient/time/active lanes and the survival backtest, so without this the
+# same items across the patient/time/active strategies and the survival backtest, so without this the
 # identical series would be refetched several times per item. prefetch_timeseries() fills this
 # concurrently; timeseries() reads it and otherwise falls back to a single per-item fetch.
 _TS_MEMO: dict[tuple[int, str], list[dict]] = {}
@@ -100,7 +100,7 @@ def prefetch_timeseries(item_ids, timesteps, max_workers: int = HISTORY_WORKERS)
 
     This is the speedup for plan research: instead of fetching each item's history serially inside
     the scan loop (hundreds of sequential round-trips), every series is pulled in parallel up front
-    and reused from memory by all lanes and the backtest. The data is identical to a serial fetch —
+    and reused from memory by all strategies and the backtest. The data is identical to a serial fetch —
     same endpoint — so this changes only timing, never the strategy. Idempotent: pairs already in
     the memo (or freshly fetched here) are not refetched."""
     jobs = [(i, t) for i in item_ids for t in timesteps if (i, t) not in _TS_MEMO]

@@ -120,13 +120,13 @@ the strategy gate.
 
 - Present the planner markdown unchanged, including its deployment utilization, plus a short
   FU-history note only when you have explicit FU stats to cite. Do not invent
-  grading/accountability summaries from repo state.
+  performance summaries from repo state.
 - Then interpret it: for each row the user asks about, explain the verdict in plain terms using
   the row's live lo/hi, break-even, and quantified alternatives. "Untracked offer" means the
-  outcome won't be strategy-graded — the advice still applies in full; never present an
+  harness did not bind strategy context — the advice still applies in full; never present an
   untracked row as "not my problem".
 - `--write-intents` writes the harness's thin pending queue. It contains the item/side/quantity
-  order identity, intended price, and strategy/reason/prediction tags. The next sync binds a
+  order identity, intended price, strategy, reason, and any hard exit. The next sync binds a
   matching RuneLite offer and consumes the pending entry; a different price alone is not a mismatch.
 - Do not ask the user to confirm that they placed the offers. The next fresh FU autosave normally
   observes them within one minute, with core RuneLite as the slower fallback. Ask only when neither
@@ -138,9 +138,9 @@ the strategy gate.
 
 ## Where the LLM is — and isn't
 
-The decision loop is deterministic. `flipper.plan` grades past fills, scans candidates, applies
-strategy gates, triages open offers, sizes against budget/slots, and writes each call's reason
-and falsifiable prediction. The LLM may interpret catalyst research into a small
+The decision loop is deterministic. `flipper.plan` uses past fills, scans candidates, applies
+strategy gates, triages open offers, sizes against budget/slots, and writes each call's reason.
+The LLM may interpret catalyst research into a small
 `{boost, avoid}` overlay that `flipper.plan --overlay` consumes. Do not re-do in the LLM what
 the planner already did (ranking, sizing, triage, formatting); feed the reasoning step only the
 research digest plus the candidate names. Boost only re-ranks gate survivors; avoid vetoes one.
@@ -158,7 +158,7 @@ bindings and observation state. Spendable GP outside GE offers is provided by th
 start of each `/flip` run; the planner adds only cash released by actions in that plan.
 
 Repo-side state stays narrow: current offer identity and observed fill quantity plus thin planner
-intent (item, side, qty, limit price, strategy label, reason, horizon, and falsifiable prediction).
+intent (item, side, qty, limit price, strategy label, reason, creation time, and any hard exit).
 Intent labels explain why an offer was suggested; they never override RuneLite fills.
 After writing intents, do not ask the user to confirm placed offers. The next sync identifies manual
 offers by item, side, and quantity and removes the matching pending intent. Price differences do not
@@ -171,9 +171,8 @@ market scanning.
 
 ## The prime rule — no action without a reason
 
-Every recommendation records: bucket, qty, price, reason, time horizon, a *falsifiable*
-prediction (direction + target + by-date), confidence, and a thin intent record. If you can't
-state a reason and a prediction, don't recommend it.
+Every recommendation records its bucket, quantity, price, reason, time horizon, deadline, and thin
+intent record. If you cannot state a concrete reason and exit plan, do not recommend it.
 
 **Every order is exact:** one item, one side, one integer quantity, one limit price — never a
 range. This makes the recommendation executable and its outcome measurable. The harness's matching
@@ -212,13 +211,13 @@ flipping is not the percentile-band strategy. `flipper.signals active-scan` scre
 no sharp 5m decline. The executable pair must produce at least three completed replay trades from
 two entry episodes, at least a 60% win rate, positive mean profit, and enough edge to cover its
 worst replayed loss. Active quantity is capped by expected fills, the GE limit, available liquid,
-and the lane-wide forced-exit risk budget. Active offers compete for available slots by expected
+and the strategy-wide forced-exit risk budget. Active offers compete for available slots by expected
 realized gp/hour, cancel if unfilled after 30 minutes, and hard-exit by 90 minutes.
 Do not claim the 12h band backtest validates these calls; label and grade them separately.
 
 An item becomes a **staple** only after at least five profitable completed round-trips, positive
 aggregate realized profit, and a median round-trip time no greater than 12h. Staple status is
-execution evidence and may raise confidence; it never bypasses freshness, regime, backtest,
+execution evidence worth citing; it never bypasses freshness, regime, backtest,
 liquidity, budget, or slot gates.
 
 ## Sizing & deployment
@@ -231,10 +230,10 @@ liquidity, budget, or slot gates.
 - The user may constrain the run with planner flags such as `--strategies patient,active` and
   `--max-new-slots 3`. Treat those as deterministic constraints. Do not add disabled strategies back
   by hand, and do not exceed the slot cap to improve utilization.
-- Every lane sizes to the conservative `fillable_qty` expected-fill estimate, capped by budget
+- Every strategy sizes to the conservative `fillable_qty` expected-fill estimate, capped by budget
   and GE limit, so unlikely fills are never credited. Patient and time-of-day positions are
   additionally capped by what a replayed forced exit would cost; active positions draw on a single
-  lane-wide forced-exit risk budget shared across every active slot the run opens.
+  strategy-wide forced-exit risk budget shared across every active slot the run opens.
 - Every slot must clear two floors: a flat per-slot floor (1,000gp — absolute, because what one
   offer can earn is capped by the item's buy limit and flow, not by the bank) and a capital-return
   floor (0.05%/hour on the gp expected to be committed to the round trip).
@@ -251,7 +250,7 @@ liquidity, budget, or slot gates.
   Quantity is capped by the GE limit, deployable gp, and explicit slot constraints.
 - Never spend beyond the effective budget; never invent low-quality trades to fill slots. If the
   planner uses fewer offers than requested, state the blocking constraint and next step (wait,
-  reduce spendable GP, or accept fewer/lower-confidence slots).
+  reduce spendable GP, or accept fewer slots).
 - Cancelled-buy refunds and collected-sale proceeds are automatically included only when the plan
   itself instructs those release actions. Never count money from an offer it keeps open.
 - A filled-but-uncollected sell is a `collect` action. Its slot is available after that action and
@@ -278,13 +277,3 @@ liquidity, budget, or slot gates.
   this skill's `research.md`. If used, it never fails silently:
   an unreachable source returns a concrete `error` (e.g. `HTTP 403`) you must cite — never a vague
   "web checks unavailable".
-
-## Accountability
-
-- Grade from **real fills, not market drift**. Use stock FU profit/history when available; otherwise
-  use RuneLite's terminal trade history and harness-observed fill deltas. Planner intents supply
-  strategy attribution and the prediction to compare against.
-- Keep strategies separate: patient-band, patient-probe, active-margin, time-of-day, manual,
-  and liquidation should not be mixed when measuring realized gp/hour.
-- Track rolling hit-rate and calibration (did 60%-confidence calls hit ~60%?). Patterns that
-  repeatedly miss get demoted; patterns that work get more capital. State misses plainly.

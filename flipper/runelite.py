@@ -208,9 +208,10 @@ def read_offer_history() -> list[dict]:
                     "slot": _to_int(offer.get("s")),
                     "uuid": offer.get("uuid"),
                 })
-    if out:
-        return out
+    newest_fu_ms = max((_to_int(row["timestamp"]) for row in out), default=0)
     for trade in _core_trades():
+        if newest_fu_ms and _to_int(trade["t"]) <= newest_fu_ms:
+            continue
         out.append({
             "id": _to_int(trade["i"]),
             "name": f"item_{_to_int(trade['i'])}",
@@ -230,36 +231,29 @@ def read_offer_history() -> list[dict]:
 
 
 def read_flips() -> list[dict]:
-    """Normalize Flipping Utilities records into order-sized FIFO lots.
+    """Normalize FU plus newer core history into order-sized FIFO lots.
 
     Each row is [{id, name, bought, sold, bought_qty, sold_qty, qty, profit, closed}].
     `bought_qty`/`sold_qty` stay distinct so partial positions remain open instead of being
     graded from FU's item-wide aggregate.
     """
-    flip_dir = INCOMING / "flipping"
-    out: list[dict] = []
-    path = _flip_file(flip_dir) if flip_dir.exists() else None
-    if path:
-        raw = json.loads(path.read_text())
-        for record in raw["trades"]:
-            out.extend(_fifo_lots(record, record["h"]["sO"]))
-    if out:
-        return out
     records: dict[int, dict] = {}
-    for trade in _core_trades():
-        iid = _to_int(trade["i"])
+    for order in read_offer_history():
+        iid = _to_int(order["id"])
         record = records.setdefault(iid, {
             "id": iid,
-            "name": f"item_{iid}",
+            "name": order["name"],
             "h": {"sO": []},
         })
         record["h"]["sO"].append({
-            "b": bool(trade["b"]),
-            "st": "BOUGHT" if trade["b"] else "SOLD",
-            "p": _to_int(trade["p"]),
-            "cQIT": _to_int(trade["q"]),
-            "t": trade["t"],
+            "st": order["state"],
+            "p": order["price"],
+            "cQIT": order["filled_qty"],
+            "t": order["timestamp"],
+            "tradeStartedAt": order.get("started_at"),
+            "uuid": order.get("uuid"),
         })
+    out: list[dict] = []
     for record in records.values():
         out.extend(_fifo_lots(record, record["h"]["sO"]))
     return out
@@ -267,6 +261,13 @@ def read_flips() -> list[dict]:
 
 _STATE_PATH = ROOT / "state/ge_state.json"
 FU_LIVE_MAX_AGE_MINUTES = 2
+CORE_LIVE_MAX_AGE_MINUTES = 6
+SNAPSHOT_MAX_AGE_MINUTES = 2
+INTENT_MAX_AGE_HOURS = 24
+
+
+def _now_ms() -> int:
+    return int(datetime.now(timezone.utc).timestamp() * 1000)
 
 
 def _core_snapshot() -> dict:
@@ -334,7 +335,7 @@ def _flip_file(flip_dir: Path) -> Path | None:
     return profile if profile.exists() else None
 
 
-def _fu_snapshot(synced_ms: int) -> tuple[dict[int, dict], int] | None:
+def _fu_snapshot(now_ms: int) -> tuple[dict[int, dict], int] | None:
     path = _flip_file(INCOMING / "flipping")
     if not path:
         return None
@@ -342,7 +343,7 @@ def _fu_snapshot(synced_ms: int) -> tuple[dict[int, dict], int] | None:
     stored_ms = _to_int(raw.get("lastStoredAt"))
     if not stored_ms:
         return None
-    if synced_ms - stored_ms > FU_LIVE_MAX_AGE_MINUTES * 60_000:
+    if now_ms - stored_ms > FU_LIVE_MAX_AGE_MINUTES * 60_000:
         return None
     return ({int(slot): offer for slot, offer in raw.get("lastOffers", {}).items()}, stored_ms)
 
@@ -369,16 +370,28 @@ def _match_intent(
     side: str,
     qty: int,
     price: int | None,
+    observed_ms: int,
     pending: list[dict],
     *,
     partial: bool = False,
 ) -> dict | None:
-    candidates = [
-        intent for intent in pending
-        if _to_int(intent["item_id"]) == item_id
-        and intent["side"] == side
-        and (_to_int(intent["qty"]) >= qty if partial else _to_int(intent["qty"]) == qty)
-    ]
+    candidates = []
+    for intent in pending:
+        try:
+            created = datetime.fromisoformat(
+                intent["created_at"].replace("Z", "+00:00")
+            )
+        except (KeyError, TypeError, ValueError):
+            continue
+        created_ms = int(created.timestamp() * 1000)
+        if not 0 <= observed_ms - created_ms <= INTENT_MAX_AGE_HOURS * 3_600_000:
+            continue
+        if (
+            _to_int(intent["item_id"]) == item_id
+            and intent["side"] == side
+            and (_to_int(intent["qty"]) >= qty if partial else _to_int(intent["qty"]) == qty)
+        ):
+            candidates.append(intent)
     if not candidates:
         return None
     if len(candidates) > 1 and not price:
@@ -396,16 +409,29 @@ def read_open_offers() -> list[dict]:
     profile, observed_at, synced_at = _core_profile()
     core_ms = int(observed_at.timestamp() * 1000)
     synced_ms = int(synced_at.timestamp() * 1000)
+    now_ms = _now_ms()
+    snapshot_age_ms = now_ms - synced_ms
+    if snapshot_age_ms > SNAPSHOT_MAX_AGE_MINUTES * 60_000:
+        raise RuntimeError(
+            f"RuneLite snapshot is stale ({snapshot_age_ms / 60_000:.1f}m old); "
+            "run flipper.sync"
+        )
     rsn = profile["displayName"]
     previous = _state()
     same_profile = previous.get("profile_key") == profile["key"]
     previous_offers = previous.get("offers", {}) if same_profile else {}
     pending = intents.read_intents(rsn)
     consumed: set[str] = set()
-    fu_snapshot = _fu_snapshot(synced_ms)
+    fu_snapshot = _fu_snapshot(now_ms)
     updates, fu_ms = fu_snapshot or ({}, 0)
     core_offers = profile.get("offers", {})
-    prefer_fu = fu_snapshot is not None and fu_ms >= core_ms
+    core_is_fresh = now_ms - core_ms <= CORE_LIVE_MAX_AGE_MINUTES * 60_000
+    if not fu_snapshot and not core_is_fresh:
+        raise RuntimeError(
+            f"RuneLite GE state is stale ({(now_ms - core_ms) / 60_000:.1f}m old); "
+            "open RuneLite, log in, and sync again"
+        )
+    prefer_fu = fu_snapshot is not None and (not core_is_fresh or fu_ms >= core_ms)
     slots = sorted(updates) if prefer_fu else sorted(int(slot) for slot in core_offers)
     current: dict[str, dict] = {}
     out: list[dict] = []
@@ -465,6 +491,7 @@ def read_open_offers() -> list[dict]:
                 side,
                 qty,
                 _to_int((core or {}).get("price")) or None,
+                observed_ms,
                 [row for row in pending if row["intent_id"] not in consumed],
             )
             if intent:
@@ -475,7 +502,7 @@ def read_open_offers() -> list[dict]:
             _to_int(update.get("tradeStartedAt"))
             if update and not update.get("beforeLogin") else 0
         )
-        core_is_current = core_matches and (
+        core_is_current = core_is_fresh and core_matches and (
             not started_ms or core_ms >= started_ms
         )
         if core_is_current:
@@ -526,11 +553,11 @@ def read_open_offers() -> list[dict]:
             "strategy": intent.get("strategy") if intent else None,
             "note": intent.get("note") if intent else None,
             "hard_exit_at": intent.get("hard_exit_at") if intent else None,
-            "age_hours": round(max(0, synced_ms - placed_ms) / 3_600_000, 2),
+            "age_hours": round(max(0, now_ms - placed_ms) / 3_600_000, 2),
             "age_is_floor": age_is_floor,
             "last_fill_at": last_fill.isoformat(timespec="seconds") if last_fill else None,
             "last_fill_age_hours": (
-                round(max(0, synced_ms - last_fill_ms) / 3_600_000, 2)
+                round(max(0, now_ms - last_fill_ms) / 3_600_000, 2)
                 if last_fill_ms else None
             ),
             "state": planner_state,
@@ -559,6 +586,7 @@ def read_open_offers() -> list[dict]:
                     side,
                     qty,
                     _to_int(trade["p"]),
+                    _to_int(trade["t"]),
                     [row for row in pending if row["intent_id"] not in consumed],
                     partial=True,
                 )

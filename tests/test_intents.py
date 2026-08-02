@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-import json
 import tempfile
 import unittest
 from pathlib import Path
 from unittest.mock import patch
 
 from flipper import intents
+
 
 class IntentTests(unittest.TestCase):
     def test_intents_from_plan_include_order_identity_and_intended_price(self) -> None:
@@ -19,7 +19,6 @@ class IntentTests(unittest.TestCase):
                 "price": 100,
                 "strategy": "patient-band",
                 "reason": "exact reason",
-                "predicted": {"direction": "up", "target": 120},
             }],
             "active_buys": [{
                 "id": 8,
@@ -42,6 +41,7 @@ class IntentTests(unittest.TestCase):
         self.assertEqual(rows[0]["strategy"], "patient-band")
         self.assertEqual(rows[0]["note"], "exact reason")
         self.assertEqual(rows[0]["created_at"], "2026-06-27T12:00:00+00:00")
+        self.assertNotIn("prediction", rows[0])
         self.assertNotIn("status", rows[0])
 
     def test_write_and_consume_harness_intents(self) -> None:

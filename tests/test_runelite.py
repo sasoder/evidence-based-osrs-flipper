@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import tempfile
 import unittest
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
 
@@ -31,12 +32,15 @@ class RuneLiteTests(unittest.TestCase):
             ],
         }))
 
-    def _read(self, root: Path) -> list[dict]:
+    def _read(self, root: Path, *, now: str | None = None) -> list[dict]:
+        snapshot = json.loads((root / "runelite/profiles.json").read_text())
+        now_ms = int(datetime.fromisoformat(now or snapshot["generatedAt"]).timestamp() * 1000)
         with (
             patch.object(runelite, "INCOMING", root),
             patch.object(runelite, "_STATE_PATH", root / "state.json"),
             patch.object(intents, "INTENT_DIR", root / "intents"),
             patch.object(runelite, "CONFIG", {**runelite.CONFIG, "rsn": "Evidence"}),
+            patch.object(runelite, "_now_ms", return_value=now_ms),
         ):
             return runelite.read_open_offers()
 
@@ -150,6 +154,7 @@ class RuneLiteTests(unittest.TestCase):
                 intents.write_intents([{
                     "intent_id": "fast", "item_id": 1127, "side": "buy", "qty": 1,
                     "price": 1, "strategy": "integration-test",
+                    "created_at": "2026-08-02T07:14:00+00:00",
                 }], rsn="Evidence")
 
             offer = self._read(root)[0]
@@ -179,7 +184,7 @@ class RuneLiteTests(unittest.TestCase):
             with patch.object(intents, "INTENT_DIR", root / "intents"):
                 intents.write_intents([{
                     "intent_id": "fast", "item_id": 1127, "side": "buy", "qty": 1,
-                    "price": 1,
+                    "price": 1, "created_at": "2026-08-02T07:14:00+00:00",
                 }], rsn="Evidence")
             self._read(root)
 
@@ -233,6 +238,33 @@ class RuneLiteTests(unittest.TestCase):
             offer = self._read(root)[0]
 
         self.assertEqual(offer["source"], "runelite")
+
+    def test_snapshot_must_be_refreshed_before_reading_offers(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._snapshot(root, offers={}, generated_at="2026-08-02T09:15:00+00:00")
+
+            with self.assertRaisesRegex(RuntimeError, "snapshot is stale"):
+                self._read(root, now="2026-08-02T09:18:00+00:00")
+
+    def test_fresh_sync_rejects_stale_core_files_when_fu_is_unavailable(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._snapshot(
+                root,
+                offers={},
+                generated_at="2026-08-02T09:15:00+00:00",
+                profiles=[{
+                    "key": "current",
+                    "displayName": "Evidence",
+                    "type": "STANDARD",
+                    "offers": {},
+                    "modifiedAt": "2026-08-02T08:15:00+00:00",
+                }],
+            )
+
+            with self.assertRaisesRegex(RuntimeError, "GE state is stale"):
+                self._read(root)
 
     def test_newer_core_snapshot_overrides_fresh_but_older_flipping_utilities(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -307,7 +339,7 @@ class RuneLiteTests(unittest.TestCase):
                 intents.write_intents([{
                     "intent_id": "match", "item_id": 7, "side": "buy", "qty": 3,
                     "price": 100, "strategy": "patient-band", "note": "reason",
-                    "hard_exit_at": "later",
+                    "hard_exit_at": "later", "created_at": "2026-08-02T09:14:00+00:00",
                 }], rsn="Evidence")
 
             first = self._read(root)[0]
@@ -320,6 +352,27 @@ class RuneLiteTests(unittest.TestCase):
         self.assertEqual(second["intent_id"], "match")
         self.assertEqual(pending, [])
 
+    def test_old_intent_does_not_bind_to_a_later_manual_offer(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._snapshot(root, offers={"0": {
+                "itemId": 7, "quantitySold": 0, "totalQuantity": 3,
+                "price": 105, "spent": 0, "state": "BUYING",
+            }})
+            with patch.object(intents, "INTENT_DIR", root / "intents"):
+                intents.write_intents([{
+                    "intent_id": "old", "item_id": 7, "side": "buy", "qty": 3,
+                    "price": 100, "strategy": "patient-band",
+                    "created_at": "2026-07-31T09:15:00+00:00",
+                }], rsn="Evidence")
+
+            offer = self._read(root)[0]
+            with patch.object(intents, "INTENT_DIR", root / "intents"):
+                pending = intents.read_intents("Evidence")
+
+        self.assertIsNone(offer["intent_id"])
+        self.assertEqual([row["intent_id"] for row in pending], ["old"])
+
     def test_collected_between_syncs_still_consumes_intent_from_trade_history(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -329,6 +382,7 @@ class RuneLiteTests(unittest.TestCase):
                 intents.write_intents([{
                     "intent_id": "instant", "item_id": 7, "side": "buy", "qty": 3,
                     "price": 100, "strategy": "active-margin",
+                    "created_at": "2026-08-02T07:15:00+00:00",
                 }], rsn="Evidence")
             self._snapshot(root, offers={}, trades=[
                 {"b": True, "i": 7, "q": 3, "p": 105, "t": 1785655000000},
@@ -351,6 +405,7 @@ class RuneLiteTests(unittest.TestCase):
                 intents.write_intents([{
                     "intent_id": "partial", "item_id": 7, "side": "buy", "qty": 10,
                     "price": 100, "strategy": "active-margin",
+                    "created_at": "2026-08-02T07:15:00+00:00",
                 }], rsn="Evidence")
             self._snapshot(root, offers={}, trades=[
                 {"b": True, "i": 7, "q": 4, "p": 99, "t": 1785655000000},
@@ -407,6 +462,34 @@ class RuneLiteTests(unittest.TestCase):
 
         self.assertEqual(flips[0]["bought"], 1734)
         self.assertEqual(flips[0]["sold"], 1850)
+
+    def test_core_extends_but_does_not_replace_flipping_utilities_history(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._snapshot(root, offers={}, trades=[
+                {"b": False, "i": 5974, "q": 10, "p": 1850, "t": 2},
+            ])
+            flipping = root / "flipping"
+            flipping.mkdir()
+            flipping.joinpath("Evidence.json").write_text(json.dumps({
+                "trades": [{
+                    "id": 5974,
+                    "name": "Coconut",
+                    "h": {"sO": [
+                        {"st": "BOUGHT", "p": 1734, "cQIT": 10, "t": 1},
+                    ]},
+                }],
+            }))
+            with (
+                patch.object(runelite, "INCOMING", root),
+                patch.object(runelite, "CONFIG", {**runelite.CONFIG, "rsn": "Evidence"}),
+            ):
+                history = runelite.read_offer_history()
+                flips = runelite.read_flips()
+
+        self.assertEqual([row["timestamp"] for row in history], [1, 2])
+        self.assertEqual(flips[0]["name"], "Coconut")
+        self.assertEqual(flips[0]["sold_qty"], 10)
 
     def test_recovers_tracked_buy_collected_between_syncs(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

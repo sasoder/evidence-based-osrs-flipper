@@ -30,7 +30,7 @@ uv run python -m unittest
 ### 2. RuneLite data
 
 The harness reads exact prices and terminal history from RuneLite's built-in Grand Exchange plugin.
-It must be enabled, but no download, fork, development client, or sideloaded plugin is required.
+It must be enabled; the harness uses only standard RuneLite plugins.
 The Plugin Hub version of Flipping Utilities is optional but strongly recommended: enable its
 auto-save and set the interval to one minute so slot changes reach the harness quickly. First
 verify the wiring:
@@ -39,6 +39,10 @@ verify the wiring:
 uv run python -m flipper.sync
 uv run python -m flipper.runelite status
 ```
+
+The status check rejects old snapshots. Sync within two minutes of planning while logged in; the
+Flipping Utilities snapshot must be at most two minutes old, or the core Grand Exchange profile
+must have been updated within six minutes.
 
 If Flipping Utilities was enabled or configured while the player was already logged in, ask them
 to log out of the character and log back in once. A full RuneLite restart and opening the Grand
