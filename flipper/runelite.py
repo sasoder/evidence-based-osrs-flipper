@@ -448,8 +448,6 @@ def read_open_offers() -> list[dict]:
             filled_qty = _to_int(update["cQIT"])
             source = "flipping_utilities"
             observed_ms = fu_ms
-            uuid = update.get("uuid")
-            identity = f"fu:{uuid}" if uuid else f"fu:{slot}:{item_id}:{side}:{qty}"
         else:
             assert core is not None
             state = str(core["state"]).upper()
@@ -463,11 +461,9 @@ def read_open_offers() -> list[dict]:
                                        "buy" if _offer_is_buy(update) else "sell",
                                        _to_int(update["tQIT"])):
                 update = None
-            uuid = update.get("uuid") if update else None
-            identity = (
-                f"fu:{uuid}" if uuid else
-                f"core:{slot}:{item_id}:{side}:{qty}:{_to_int(core['price'])}"
-            )
+
+        started_ms = _to_int((update or {}).get("tradeStartedAt"))
+        identity = f"ge:{slot}:{item_id}:{side}:{qty}:{started_ms}"
 
         old = previous_offers.get(str(slot))
         same_offer = bool(old and old["identity"] == identity)
@@ -498,12 +494,12 @@ def read_open_offers() -> list[dict]:
                 consumed.add(intent["intent_id"])
 
         core_matches = _matches(core, item_id, side, qty)
-        started_ms = (
+        reliable_started_ms = (
             _to_int(update.get("tradeStartedAt"))
             if update and not update.get("beforeLogin") else 0
         )
         core_is_current = core_is_fresh and core_matches and (
-            not started_ms or core_ms >= started_ms
+            not reliable_started_ms or core_ms >= reliable_started_ms
         )
         if core_is_current:
             price = _to_int(core["price"])

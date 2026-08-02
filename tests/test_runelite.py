@@ -201,6 +201,98 @@ class RuneLiteTests(unittest.TestCase):
         self.assertEqual(confirmed["price_source"], "runelite")
         self.assertEqual(confirmed["intent_id"], "fast")
 
+    def test_fu_uuid_changes_do_not_drop_intent_during_offer_lifecycle(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            flipping = root / "flipping"
+            flipping.mkdir()
+            started_at = 1785654850000
+
+            def update_snapshot(generated_at: str, stored_at: int, uuid: str,
+                                state: str, filled_qty: int) -> None:
+                self._snapshot(root, offers={}, generated_at=generated_at)
+                flipping.joinpath("Evidence.json").write_text(json.dumps({
+                    "lastStoredAt": stored_at,
+                    "trades": [],
+                    "lastOffers": {"1": {
+                        "uuid": uuid, "id": 1127, "st": state,
+                        "tQIT": 10, "cQIT": filled_qty, "p": 0,
+                        "tradeStartedAt": started_at, "t": stored_at,
+                        "beforeLogin": False,
+                    }},
+                }))
+
+            update_snapshot(
+                "2026-08-02T07:15:00+00:00", 1785654900000,
+                "placed-event", "BUYING", 0,
+            )
+            with patch.object(intents, "INTENT_DIR", root / "intents"):
+                intents.write_intents([{
+                    "intent_id": "tracked", "item_id": 1127, "side": "buy", "qty": 10,
+                    "price": 100, "strategy": "patient-band",
+                    "created_at": "2026-08-02T07:14:00+00:00",
+                }], rsn="Evidence")
+            placed = self._read(root)[0]
+
+            update_snapshot(
+                "2026-08-02T07:16:00+00:00", 1785654960000,
+                "partial-fill-event", "BUYING", 4,
+            )
+            partial = self._read(root)[0]
+            update_snapshot(
+                "2026-08-02T07:17:00+00:00", 1785655020000,
+                "completed-event", "BOUGHT", 10,
+            )
+            completed = self._read(root)[0]
+            with patch.object(intents, "INTENT_DIR", root / "intents"):
+                pending = intents.read_intents("Evidence")
+
+        self.assertEqual(placed["intent_id"], "tracked")
+        self.assertEqual(partial["intent_id"], "tracked")
+        self.assertEqual(partial["strategy"], "patient-band")
+        self.assertEqual(completed["intent_id"], "tracked")
+        self.assertEqual(completed["state"], "FILLED")
+        self.assertEqual(pending, [])
+
+    def test_later_identical_fu_offer_in_same_slot_does_not_inherit_intent(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            self._snapshot(root, offers={}, generated_at="2026-08-02T07:15:00+00:00")
+            flipping = root / "flipping"
+            flipping.mkdir()
+            fu = {
+                "lastStoredAt": 1785654900000,
+                "trades": [],
+                "lastOffers": {"1": {
+                    "uuid": "first-event", "id": 1127, "st": "BUYING",
+                    "tQIT": 10, "cQIT": 0, "p": 0,
+                    "tradeStartedAt": 1785654850000, "t": 1785654900000,
+                    "beforeLogin": False,
+                }},
+            }
+            flipping.joinpath("Evidence.json").write_text(json.dumps(fu))
+            with patch.object(intents, "INTENT_DIR", root / "intents"):
+                intents.write_intents([{
+                    "intent_id": "first", "item_id": 1127, "side": "buy", "qty": 10,
+                    "price": 100, "strategy": "patient-band",
+                    "created_at": "2026-08-02T07:14:00+00:00",
+                }], rsn="Evidence")
+            first = self._read(root)[0]
+
+            self._snapshot(root, offers={}, generated_at="2026-08-02T07:20:00+00:00")
+            fu["lastStoredAt"] = 1785655200000
+            fu["lastOffers"]["1"].update({
+                "uuid": "later-event",
+                "tradeStartedAt": 1785655150000,
+                "t": 1785655200000,
+            })
+            flipping.joinpath("Evidence.json").write_text(json.dumps(fu))
+            later = self._read(root)[0]
+
+        self.assertEqual(first["intent_id"], "first")
+        self.assertIsNone(later["intent_id"])
+        self.assertIsNone(later["strategy"])
+
     def test_fresh_empty_flipping_utilities_overrides_stale_core_offer(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
