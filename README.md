@@ -1,13 +1,14 @@
 # Evidence-Based OSRS Flipper
 
+[![Tests](https://github.com/sasoder/evidence-based-osrs-flipper/actions/workflows/tests.yml/badge.svg)](https://github.com/sasoder/evidence-based-osrs-flipper/actions/workflows/tests.yml)
+
 **Evidence-Based OSRS Flipper is an OSRS Grand Exchange flipping advisor.** It reads RuneLite's
 local GE state, checks OSRS Wiki prices, and gives you exact buy/sell/cancel/reprice
-instructions to type into the GE. It never touches the game, you still place every offer
-yourself.
+instructions to type into the GE. It never touches the game, you still place every offer yourself.
 
 
 <p align="center">
-  <img src="images/demo.png" alt="Asking the agent for a flip plan and getting back an action table" width="700">
+  <img src="images/demo.webp" alt="Asking the agent for a flip plan and getting back an action table" width="700">
 </p>
 
 Each recommendation records why it was made, its target, and its deadline. Later runs reconcile
@@ -18,9 +19,10 @@ Inspired by Leverage In Action's
 
 ## Getting started
 
-You need RuneLite, Python 3.11+, and a coding agent like
-[Claude](https://claude.com/download) or [Codex](https://openai.com/codex/). The commands below use
-[uv](https://docs.astral.sh/uv/); with an activated Python environment, omit `uv run`.
+RuneLite and Python 3.11+ are required. A coding agent like
+[Claude](https://claude.com/download) or [Codex](https://openai.com/codex/) is highly recommended,
+but you can also use the planner directly from its CLI. The commands below use
+[uv](https://docs.astral.sh/uv/). If you already have a Python environment activated, skip `uv run`.
 
 1. **Get the repo.** Clone it, or [download the ZIP](https://github.com/sasoder/evidence-based-osrs-flipper/archive/refs/heads/main.zip) and unzip it.
 
@@ -31,8 +33,7 @@ You need RuneLite, Python 3.11+, and a coding agent like
 
 2. **Open RuneLite and make sure its built-in Grand Exchange plugin is enabled.** Flipping
    Utilities from the Plugin Hub is optional but highly recommended for faster slot and fill
-   updates; enable auto-save and set its interval to one minute. Only standard RuneLite plugins
-   are used.
+   updates. Enable auto-save and set its interval to one minute.
 
    <p align="center">
      <img src="images/runelite-grand-exchange.png" alt="Grand Exchange enabled in RuneLite" width="230">
@@ -40,23 +41,24 @@ You need RuneLite, Python 3.11+, and a coding agent like
      <img src="images/flipping-utilities-autosave.png" alt="Flipping Utilities auto-save interval set to one minute" width="240">
    </p>
 
-3. **Open the repo in your agent and ask it to set up the project.** Use `/setup` when your agent
-   supports skill commands. Follow the prompts while it verifies Python and the RuneLite connection.
+3. **Set up the project.** The easiest option is to open the repo in your agent and ask it to handle
+   setup. Use `/setup` when your agent supports skill commands, then follow the prompts while it
+   checks Python and RuneLite. If you prefer not to use an agent, run the sync and planner commands
+   in the CLI section below.
 
-Then just talk to it: *"I have 50m spendable outside the GE; what should I buy?"*
+With an agent, you can just ask: *"I have 50m cash, what should I buy?"*
 
 ## Using it
 
 Typical requests, in plain chat:
 
-- **"I have 50m spendable outside the GE; what should I do?"** — syncs your data, checks every open offer (hold, cancel, collect, or reprice), then fills free slots. Offer-only review works the same way with no cash: *"what should I do with my current offers?"*
-- **"Are the items I usually flip still good right now?"** — if you use Flipping Utilities, reads your history, re-checks those winners against today's prices and the same gates, and only keeps ones that still clear.
-- **"Going to bed, 120m."** — overnight mode: sizes positions to a 12-hour window.
-- **"Only active flips, max 5 slots."** — preferences go straight to the planner as hard limits.
-- **"Anything being talked about that's worth flipping?"** — optional research pass over the OSRS news feed and Reddit. It re-ranks trades that already passed the evidence gates (and is the only way a breaking market gets bought into), but it never invents a trade.
+- **"I have 50m, what should I do?"**: syncs your data, checks every open offer (hold, cancel, collect, or reprice), then fills free slots. Offer-only review works the same way with no cash: *"what should I do with my current offers?"*
+- **"Are the items I usually flip still good right now?"**: if you use Flipping Utilities, it reads your history, re-checks those winners against today's prices and the same gates, and only keeps ones that still pass.
+- **"Going to bed, 120m."**: sizes positions for a 12-hour window.
+- **"Only active flips, max 5 slots."**: sends those preferences to the planner as hard limits.
+- **"Anything being talked about that's worth flipping?"**: checks the OSRS news feed and Reddit for context. Research can re-rank trades that already passed the evidence gates (and is the only way a breaking market gets bought into), but it never invents a trade.
 
-If your message doesn't include the numbers, the agent asks: spendable GP outside GE offers, whether you'll be
-around, which strategies, and slot cap. A plan looks like this:
+If your message doesn't include specifics, the agent asks for everything it needs. A plan looks like this:
 
 
 | action | item             | qty | price   | capital   | exp. profit | live lo/hi      | sell target | deadline  | basis                                  |
@@ -96,10 +98,10 @@ uv run python -m flipper.sync
 uv run python -m flipper.plan --cash 50000000 --strategies active --max-new-slots 5 --write-intents --markdown
 ```
 
-- `--cash <gp>`: spendable GP currently outside GE offers. Required; collect/cancel proceeds are added automatically.
+- `--cash <gp>`: spendable GP currently outside GE offers. This is required. The planner automatically adds proceeds and refunds from collect or cancel actions.
 - `--strategies patient,active,time,probe`: enabled strategies, or presets like `balanced` and `conservative`.
 - `--max-new-slots <n>`: cap new offers after checking current offers.
-- `--horizon overnight`: drop keyboard-dependent strategies and size for 12h away.
+- `--horizon overnight`: disable strategies that need you at the keyboard and size positions for 12h away.
 - `--write-intents`: queue order identities, intended prices, and evidence for the next sync.
 - `--report-personal-history`: show historical FU items that did not clear today's checks.
 
@@ -107,8 +109,8 @@ uv run python -m flipper.plan --cash 50000000 --strategies active --max-new-slot
 
 Your RuneLite snapshot, optional Flipping Utilities history, and reconciled offer state stay on
 disk and out of git: `data/incoming/runelite/`, `data/incoming/flipping/`, and `state/`.
-On Windows, RuneLite's default data directory is `%USERPROFILE%\.runelite`; automatic discovery
-works there, with `RUNELITE_HOME` available for non-default installations.
+On Windows, RuneLite's default data directory is `%USERPROFILE%\.runelite`. The app finds it
+automatically. If yours is somewhere else, set `RUNELITE_HOME`.
 
 ## Why "Evidence"?
 
