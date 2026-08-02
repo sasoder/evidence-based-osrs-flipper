@@ -27,46 +27,46 @@ selected interpreter:
 uv run python -m unittest
 ```
 
-### 2. RuneLite plugin
+### 2. RuneLite data
 
-The harness requires the [sasoder/rl-plugin](https://github.com/sasoder/rl-plugin) fork of
-Flipping Utilities with autosave (1-minute interval) and "Export current GE slots" enabled —
-the fork README owns its build, launch, and Jagex-account instructions. First verify the wiring:
+The harness reads exact prices and terminal history from RuneLite's built-in Grand Exchange plugin.
+It must be enabled, but no download, fork, development client, or sideloaded plugin is required.
+The Plugin Hub version of Flipping Utilities is optional but strongly recommended: enable its
+auto-save and set the interval to one minute so slot changes reach the harness quickly. First
+verify the wiring:
 
 ```bash
 uv run python -m flipper.sync
-uv run python -m flipper.runelite offers
+uv run python -m flipper.runelite status
 ```
 
-With the game open, offers (or `[]` when every slot is empty) should print. If fresh exports
-already exist, do not reinstall or relaunch anything.
+With normal RuneLite open and logged in, status should name the account and report
+`slot_source: flipping_utilities` after the next one-minute autosave. `offers: 0` is valid when
+every slot is empty. If the snapshot already resolves the intended profile, do not reinstall or
+relaunch anything.
 
-If the fork is not installed, handle the non-interactive setup steps and guide the user through the
-rest. Check for a suitable Java runtime, then clone the fork with Git when available or download
-and unzip it when Git is absent.
-Put it in a sibling or user-selected directory and start its Gradle `runPlugin` task. Do not use
-`~/.runelite/sideloaded-plugins`: the supported path is the development client started by the
-fork's runner, not a jar loaded by a normal RuneLite or Jagex Launcher client. A Jagex account
-needs the one-time credential handoff described by the fork; authentication and enabling the
-plugin remain interactive user steps.
+Fresh stock Flipping Utilities data is the preferred source for slot presence, quantities, fills,
+and timestamps. RuneLite core confirms exact limit prices after its batched config write. A matched
+intent supplies a clearly provisional price until then. Without Flipping Utilities, core-only mode
+still works but current changes can lag by about five minutes.
 
-If the user needs to start the client themselves, say where to paste the commands. On Windows,
-tell them to open PowerShell and use the actual Windows path with `cd`, followed by
-`.\gradlew.bat runPlugin`; do not give them Git Bash paths such as `/c/Users/...`.
-
-Remove the Plugin Hub copy of Flipping Utilities before starting the fork. In the development
-client, ensure the fork itself is enabled, then enable one-minute auto-save and "Export current GE
-slots." Diagnose a failure from the first broken link:
+Diagnose a failure from the first broken link:
 
 | observation | check next |
 |---|---|
-| no source `current-slots/<rsn>.json` | development-client launch, duplicate stock plugin, plugin enabled, export enabled, logged in |
-| source fresh but repo mirror absent or stale | `flipper.sync` output and resolved `RUNELITE_HOME` |
-| repo mirror fresh but reader errors | RSN/config ambiguity |
+| no `data/incoming/runelite/profiles.json` | `flipper.sync` output and resolved `RUNELITE_HOME` |
+| enabled GE plugin sees an offer but disk does not | RuneLite batches profile writes; allow up to five minutes for its next flush |
+| `slot_source` remains `runelite` | enable stock FU auto-save, set its interval to one minute, and run status after its next autosave |
+| snapshot has no intended profile | normal RuneLite has been launched and the account logged in at least once |
+| reader reports ambiguity | RSN, profile type, RuneLite's selected profile log, then `runelite_profile` config |
 | reader prints `[]` | valid when all GE slots are empty |
 | unrelated tool fails | diagnose its actual error; do not add machine-specific config or instructions |
 
-Missing or stale exports are the blocker to fix; never write config to paper over them.
+Never select an arbitrary duplicate profile. Prefer RuneLite's own selected-profile log; ask once
+and persist `runelite_profile` only when duplicates remain genuinely ambiguous.
+RuneLite's default data directory is `~/.runelite` on every supported desktop platform
+(`%USERPROFILE%\.runelite` on Windows). Use `RUNELITE_HOME` only for a genuinely non-default
+installation.
 
 ### 3. Config — only what defaults can't infer
 
@@ -74,8 +74,8 @@ Ask in one round (a single structured multi-question prompt if the engine suppor
 
 - **Wiki contact**: an email/Discord/RSN for the OSRS Wiki API user-agent. The Wiki asks that
   clients be identifiable; the shipped placeholder works but is impolite to leave.
-- **RSN**: ask only if `data/incoming` shows zero or multiple Flipping Utilities profiles — a
-  single profile is auto-detected and needs no config.
+- **RSN**: ask only if `data/incoming` shows zero or multiple RuneLite account names — a single
+  profile is auto-detected and needs no config.
 - **Research subreddits** (multi-select): which subreddits the optional research overlay reads.
   Default to no subreddits selected. Offer exactly these options: `2007scape` (recommended),
   `OSRSflipping` (recommended), `GrandExchange` — plus the engine's built-in "Other" for custom
@@ -89,4 +89,5 @@ nothing — the defaults work.
 
 ### 4. Done
 
-Suggest a first run: "50m liquid, what should I buy?" (the `flip` skill takes it from there).
+Suggest a first run: "I have 50m spendable outside the GE; what should I buy?" (the `flip` skill
+takes it from there).

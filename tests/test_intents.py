@@ -4,6 +4,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from flipper import intents
 
@@ -34,30 +35,27 @@ class IntentTests(unittest.TestCase):
         rows = intents.intents_from_plan(plan_json)
 
         self.assertEqual(len(rows), 2)
-        self.assertEqual(rows[0]["itemId"], 7)
+        self.assertEqual(rows[0]["item_id"], 7)
         self.assertEqual(rows[0]["side"], "buy")
         self.assertEqual(rows[0]["qty"], 3)
         self.assertEqual(rows[0]["price"], 100)
         self.assertEqual(rows[0]["strategy"], "patient-band")
         self.assertEqual(rows[0]["note"], "exact reason")
+        self.assertEqual(rows[0]["created_at"], "2026-06-27T12:00:00+00:00")
         self.assertNotIn("status", rows[0])
 
-    def test_write_intents_targets_plugin_queue(self) -> None:
+    def test_write_and_consume_harness_intents(self) -> None:
         with tempfile.TemporaryDirectory() as d:
-            path = intents.write_intents(
-                [{"intentId": "i", "itemId": 7, "side": "buy", "qty": 1, "price": 100}],
-                rsn="Evidence",
-                runelite_home=Path(d),
-            )
+            with patch.object(intents, "INTENT_DIR", Path(d)):
+                path = intents.write_intents([
+                    {"intent_id": "i", "item_id": 7, "side": "buy", "qty": 1, "price": 100},
+                    {"intent_id": "keep", "item_id": 8, "side": "buy", "qty": 1, "price": 200},
+                ], rsn="Evidence")
+                intents.consume_intents("Evidence", {"i"})
+                remaining = intents.read_intents("Evidence")
 
-            self.assertEqual(path, Path(d) / "flipping" / "merch-intents" / "Evidence.jsonl")
-            self.assertEqual(json.loads(path.read_text()), {
-                "intentId": "i",
-                "itemId": 7,
-                "side": "buy",
-                "qty": 1,
-                "price": 100,
-            })
+            self.assertEqual(path, Path(d) / "Evidence.jsonl")
+            self.assertEqual([row["intent_id"] for row in remaining], ["keep"])
 
 
 

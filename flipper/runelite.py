@@ -3,11 +3,12 @@
 Inputs produced by RuneLite on the trading machine:
 
   data/incoming/flipping/*.json           — Flipping Utilities autosave files
-  data/incoming/ge-slots/*.json           — FU fork current GE slot export
+  data/incoming/runelite/profiles.json    — built-in RuneLite GE state
 
 CLI:
     python -m flipper.runelite flips       # normalized realized flips
-    python -m flipper.runelite offers      # non-empty GE slots from FU current-slot export
+    python -m flipper.runelite offers      # reconciled non-empty GE slots
+    python -m flipper.runelite status      # profile and live-source verification
 """
 
 from __future__ import annotations
@@ -21,7 +22,6 @@ from .config import ROOT, load_config
 
 CONFIG = load_config()
 INCOMING = ROOT / "data/incoming"
-OFFER_SNAPSHOT_STALE_MINUTES = 5
 
 
 def _configured_rsn() -> str | None:
@@ -42,16 +42,20 @@ def _single_profile_stem(directory: Path) -> str | None:
 
 
 def profile_rsn() -> str | None:
-    """Configured RSN, or the only FU profile visible in local incoming exports."""
+    """Configured RSN, or the only profile visible in FU/core local data."""
     if rsn := _configured_rsn():
         return rsn
-    candidates = {
-        stem for stem in (
-            _single_profile_stem(INCOMING / "ge-slots"),
-            _single_profile_stem(INCOMING / "flipping"),
-        )
-        if stem
-    }
+    candidates = {stem for stem in (_single_profile_stem(INCOMING / "flipping"),) if stem}
+    try:
+        snapshot = json.loads((INCOMING / "runelite/profiles.json").read_text())
+        names = {
+            profile["displayName"] for profile in snapshot["profiles"]
+            if profile.get("type") == "STANDARD" and profile.get("displayName")
+        }
+        if len(names) == 1:
+            candidates.update(names)
+    except FileNotFoundError:
+        pass
     return next(iter(candidates)) if len(candidates) == 1 else None
 
 
@@ -167,7 +171,7 @@ def _fifo_lots(record: dict, offers: list[dict]) -> list[dict]:
 
 
 def read_offer_history() -> list[dict]:
-    """Return FU's persisted order events in a stable, analysis-friendly shape.
+    """Return FU or core RuneLite trades in a stable, analysis-friendly shape.
 
     These are terminal/partial snapshots, not a tick-by-tick fill tape. In particular, FU does
     not retain zero-fill cancelled orders, so callers must use the data only as a conservative
@@ -204,6 +208,24 @@ def read_offer_history() -> list[dict]:
                     "slot": _to_int(offer.get("s")),
                     "uuid": offer.get("uuid"),
                 })
+    if out:
+        return out
+    for trade in _core_trades():
+        out.append({
+            "id": _to_int(trade["i"]),
+            "name": f"item_{_to_int(trade['i'])}",
+            "side": "buy" if trade["b"] else "sell",
+            "state": "BOUGHT" if trade["b"] else "SOLD",
+            "filled_qty": _to_int(trade["q"]),
+            "total_qty": _to_int(trade["q"]),
+            "price": _to_int(trade["p"]),
+            "timestamp": trade["t"],
+            "started_at": None,
+            "duration_seconds": None,
+            "before_login": True,
+            "slot": None,
+            "uuid": None,
+        })
     return out
 
 
@@ -221,397 +243,386 @@ def read_flips() -> list[dict]:
         raw = json.loads(path.read_text())
         for record in raw["trades"]:
             out.extend(_fifo_lots(record, record["h"]["sO"]))
+    if out:
+        return out
+    records: dict[int, dict] = {}
+    for trade in _core_trades():
+        iid = _to_int(trade["i"])
+        record = records.setdefault(iid, {
+            "id": iid,
+            "name": f"item_{iid}",
+            "h": {"sO": []},
+        })
+        record["h"]["sO"].append({
+            "b": bool(trade["b"]),
+            "st": "BOUGHT" if trade["b"] else "SOLD",
+            "p": _to_int(trade["p"]),
+            "cQIT": _to_int(trade["q"]),
+            "t": trade["t"],
+        })
+    for record in records.values():
+        out.extend(_fifo_lots(record, record["h"]["sO"]))
     return out
 
 
-def read_open_offers() -> list[dict]:
-    """Current GE slots in flipper.plan's open-offer shape.
-
-    Uses the patched Flipping Utilities current-slot export because it is the
-    authoritative live GE slot snapshot: item, side, quantity, filled quantity,
-    listing price, state, and age metadata all come from the client-side slot
-    view.
-    """
-    return _read_open_offers_from_export()
+_STATE_PATH = ROOT / "state/ge_state.json"
+FU_LIVE_MAX_AGE_MINUTES = 2
 
 
-def _read_open_offers_from_export() -> list[dict]:
-    """Read FU's current-slot JSON export into flipper.plan's open-offer shape.
-
-    Returns non-empty GE slots:
-    [{"slot": 0, "id": 32032, "side": "sell", "qty": 261,
-      "filled_qty": 0, "price": 41324, "age_hours": 6.5, "state": "ACTIVE"}]
-    """
-    path = _ge_slots_file()
-    if not path:
-        raise RuntimeError(
-            "current GE slot export is missing; log in with the FU fork running and verify "
-            "Export current GE slots is enabled"
-        )
-    raw = json.loads(path.read_text())
-
-    exported_at = _parse_iso(raw["exportedAt"])
-    if not exported_at:
-        raise RuntimeError("current GE slot export has no valid exportedAt timestamp")
-    snapshot_age = datetime.now(timezone.utc) - exported_at.astimezone(timezone.utc)
-    if snapshot_age.total_seconds() > OFFER_SNAPSHOT_STALE_MINUTES * 60:
-        age_minutes = snapshot_age.total_seconds() / 60
-        raise RuntimeError(
-            f"current GE slot export is stale ({age_minutes:.1f}m old; "
-            f"limit {OFFER_SNAPSHOT_STALE_MINUTES}m); the export heartbeats every 10s while logged in, "
-            f"so log in to RuneLite (or toggle 'Export current GE slots' off/on) and re-sync"
-        )
-
-    updates = _current_offer_updates()
-    timers = _current_slot_timers()
-    anchors = _load_offer_anchors()
-    fill_anchors = _load_fill_anchors()
-    fill_index = _last_fill_index()
-    exported_ms = int(exported_at.timestamp() * 1000)
-    slot_claims = {
-        _to_int(slot.get("slot")): _placement_claims_ms(
-            slot, updates.get(_to_int(slot.get("slot"))),
-            timers.get(_to_int(slot.get("slot"))), exported_ms)
-        for slot in raw["slots"] if slot["state"].upper() != "EMPTY"
-    }
-    suspects = _batch_restamps_ms(slot_claims)
-    open_uuids: set[str] = set()
-    offers = []
-    for slot in raw["slots"]:
-        state = slot["state"].upper()
-        if state == "EMPTY":
-            continue
-        side = slot["side"]
-        item_id = _to_int(slot["itemId"])
-        if side not in ("buy", "sell") or item_id <= 0:
-            raise ValueError(f"invalid current GE slot: {slot}")
-
-        slot_idx = _to_int(slot.get("slot"))
-        update = updates.get(slot_idx)
-        # Only trust the autosave join when item and side agree with the GE slot.
-        joined = (
-            update is not None
-            and _to_int(update.get("id")) == item_id
-            and _offer_is_buy(update) == (side == "buy")
-        )
-        age_is_floor = None
-        if joined and update.get("uuid"):
-            open_uuids.add(update["uuid"])
-            age_seconds = _resolve_age_seconds(
-                slot, update, timers.get(slot_idx), exported_at, anchors, suspects)
-            # "observed" anchors date from when this harness first saw the offer, not
-            # from placement: the true age is at least this, possibly much more.
-            age_is_floor = anchors[update["uuid"]]["source"] == "observed"
-        else:
-            # No reliable uuid join (e.g. missing autosave): fall back to the
-            # plugin's own age, which may be None.
-            age_seconds = _age_seconds(slot, exported_at, suspects)
-        filled_qty = _to_int(slot.get("filledQty"))
-        last_fill_at = None
-        last_fill_age_hours = None
-        # Source last-fill time from fill-anchored trade history, not the live snapshot's
-        # rewritten `t`. Unknown stays None so the staleness gate treats it as unknown, not fresh.
-        offer_uuid = update.get("uuid") if joined else None
-        anchor_ms = (
-            _resolve_fill_ms(offer_uuid, filled_qty, exported_ms, fill_anchors)
-            if offer_uuid else None
-        )
-        if filled_qty > 0:
-            # History dates closed offers; the qty-growth anchor catches partial fills on the
-            # still-open offer that history can't see. Newest wins; None only if neither knows.
-            fill_ms = anchor_ms
-            history_ms = fill_index.get((item_id, side, offer_uuid))
-            if history_ms and (not fill_ms or history_ms > fill_ms):
-                fill_ms = history_ms
-            if fill_ms:
-                fill_time = datetime.fromtimestamp(fill_ms / 1000, tz=timezone.utc)
-                last_fill_at = fill_time.isoformat(timespec="seconds")
-                last_fill_age_hours = round(
-                    max(0, (exported_at - fill_time).total_seconds()) / 3600,
-                    2,
-                )
-        offers.append({
-            "slot": _to_int(slot.get("slot")),
-            "id": item_id,
-            "side": side,
-            "qty": _to_int(slot.get("offerQty")),
-            "filled_qty": filled_qty,
-            "price": _to_int(slot.get("offerPrice")),
-            "intent_id": slot.get("merchIntentId"),
-            "strategy": slot.get("merchStrategy"),
-            "note": slot.get("merchNote"),
-            "hard_exit_at": slot.get("merchHardExitAt"),
-            "age_hours": round(age_seconds / 3600, 2) if age_seconds is not None else None,
-            "age_is_floor": age_is_floor,
-            "last_fill_at": last_fill_at,
-            "last_fill_age_hours": last_fill_age_hours,
-            "state": state,
-        })
-    # Drop anchors for offers that are no longer open; keeps the store bounded
-    # to the current slots and lets a reused uuid start fresh.
-    for stale_uuid in [u for u in anchors if u not in open_uuids]:
-        del anchors[stale_uuid]
-    if anchors or _OFFER_AGE_PATH.exists():
-        _save_offer_anchors(anchors)
-    for stale_uuid in [u for u in fill_anchors if u not in open_uuids]:
-        del fill_anchors[stale_uuid]
-    if fill_anchors or _FILL_ANCHOR_PATH.exists():
-        _save_fill_anchors(fill_anchors)
-    return sorted(offers, key=lambda o: o["slot"])
+def _core_snapshot() -> dict:
+    try:
+        return json.loads((INCOMING / "runelite/profiles.json").read_text())
+    except FileNotFoundError as error:
+        raise RuntimeError("RuneLite GE snapshot is missing; run flipper.sync") from error
 
 
-def _ge_slots_file() -> Path | None:
-    slot_dir = INCOMING / "ge-slots"
+def _core_profile() -> tuple[dict, datetime, datetime]:
+    snapshot = _core_snapshot()
     rsn = profile_rsn()
     if not rsn:
-        raise ValueError("set config/settings.json rsn or keep exactly one current-slot export")
-    profile = slot_dir / f"{rsn}.json"
-    return profile if profile.exists() else None
-
-
-def _parse_iso(value) -> datetime | None:
-    if not value:
-        return None
-    try:
-        dt = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
-    except ValueError:
-        return None
-    return dt if dt.tzinfo else dt.replace(tzinfo=timezone.utc)
-
-
-def _age_seconds(slot: dict, exported_at: datetime | None,
-                 suspects: set[int] | None = None) -> float | None:
-    if not exported_at:
-        return None
-    exported_ms = int(exported_at.timestamp() * 1000)
-    raw_age = slot.get("ageSeconds")
-    if raw_age is not None:
-        placed_ms = exported_ms - max(0, _to_int(raw_age)) * 1000
-        if not _is_restamped(placed_ms, suspects):
-            return max(0, _to_int(raw_age))
-    created = _parse_iso(slot.get("offerCreationTime"))
-    if not created:
-        return None
-    created_ms = int(created.timestamp() * 1000)
-    if _is_restamped(created_ms, suspects):
-        return None
-    return max(0, (exported_at - created).total_seconds())
-
-
-# --- Offer-age anchoring ----------------------------------------------------
-# RuneLite's GrandExchangeOffer carries no original placement tick, so Flipping
-# Utilities' age resets to ~0 (or null) whenever an offer is re-observed across a
-# relog. We instead anchor each offer by its stable `uuid` to the earliest
-# *trustworthy* placement evidence and persist it, so age survives relogs.
-
-_STATE_DIR = ROOT / "state"
-_OFFER_AGE_PATH = _STATE_DIR / "offer_ages.json"
-_FILL_ANCHOR_PATH = _STATE_DIR / "offer_fills.json"
-def _load_offer_anchors() -> dict:
-    try:
-        return json.loads(_OFFER_AGE_PATH.read_text())
-    except (FileNotFoundError, ValueError):
-        return {}
-
-
-def _save_offer_anchors(anchors: dict) -> None:
-    _STATE_DIR.mkdir(parents=True, exist_ok=True)
-    tmp = _OFFER_AGE_PATH.with_suffix(".tmp")
-    tmp.write_text(json.dumps(anchors, indent=2, sort_keys=True))
-    tmp.replace(_OFFER_AGE_PATH)
-
-
-def _load_fill_anchors() -> dict:
-    try:
-        return json.loads(_FILL_ANCHOR_PATH.read_text())
-    except (FileNotFoundError, ValueError):
-        return {}
-
-
-def _save_fill_anchors(anchors: dict) -> None:
-    _STATE_DIR.mkdir(parents=True, exist_ok=True)
-    tmp = _FILL_ANCHOR_PATH.with_suffix(".tmp")
-    tmp.write_text(json.dumps(anchors, indent=2, sort_keys=True))
-    tmp.replace(_FILL_ANCHOR_PATH)
-
-
-def _resolve_fill_ms(uuid: str, filled_qty: int, exported_ms: int,
-                     fill_anchors: dict) -> int | None:
-    """Last-fill time (ms epoch) for the *currently open* offer, from observed qty growth.
-
-    History only dates terminal offers, so a partial fill on a still-open offer is invisible
-    there. We persist the offer's filled_qty by uuid and stamp ``exported_ms`` whenever it
-    grows between exports. On first sight we cannot know when an existing partial happened, so
-    we record the qty but return None (unknown) rather than claim it just filled.
-    """
-    stored = fill_anchors.get(uuid)
-    prev_qty = _to_int(stored.get("filled_qty")) if stored else None
-    fill_ms = _to_int(stored.get("fill_ms")) if stored and stored.get("fill_ms") else None
-    if prev_qty is not None and filled_qty > prev_qty:
-        fill_ms = exported_ms
-    fill_anchors[uuid] = {"filled_qty": filled_qty, "fill_ms": fill_ms}
-    return fill_ms
-
-
-def _current_slot_timers() -> dict[int, dict]:
-    path = _flip_file(INCOMING / "flipping")
-    if not path:
-        return {}
-    raw = json.loads(path.read_text())
-    return {_to_int(t.get("slotIndex")): t for t in (raw.get("slotTimers") or [])}
-
-
-# Distinct offers are never placed within the same few seconds; when 2+ slots claim
-# placement times this close together, FU restamped every open offer at a
-# re-observation event (relog/world hop) while still asserting the times are known.
-_RESTAMP_EPSILON_MS = 5_000
-
-
-def _is_restamped(ms: int, suspects: set[int] | None) -> bool:
-    return bool(suspects) and any(abs(ms - s) <= _RESTAMP_EPSILON_MS for s in suspects)
-
-
-def _placement_claims_ms(slot: dict, offer: dict | None, timer: dict | None,
-                         exported_ms: int) -> set[int]:
-    """Every placement time this slot claims, trusted or not."""
-    claims: set[int] = set()
-    raw_age = slot.get("ageSeconds")
-    if raw_age is not None:
-        claims.add(exported_ms - max(0, _to_int(raw_age)) * 1000)
-    created = _parse_iso(slot.get("offerCreationTime"))
-    if created:
-        claims.add(int(created.timestamp() * 1000))
-    for source in ((timer or {}).get("tradeStartTime"),
-                   (offer or {}).get("tradeStartedAt")):
-        ms = _to_int(source)
-        if ms > 0:
-            claims.add(ms)
-    return claims
-
-
-def _batch_restamps_ms(slot_claims: dict[int, set[int]]) -> set[int]:
-    """Placement times claimed by two or more different slots — batch restamps."""
-    suspects: set[int] = set()
-    for idx, claims in slot_claims.items():
-        others = [ms for other_idx, other in slot_claims.items()
-                  if other_idx != idx for ms in other]
-        suspects.update(
-            ms for ms in claims
-            if any(abs(ms - o) <= _RESTAMP_EPSILON_MS for o in others)
-        )
-    return suspects
-
-
-def _trusted_placements_ms(slot: dict, offer: dict, timer: dict | None,
-                           exported_ms: int, suspects: set[int] | None = None) -> list[int]:
-    """Placement timestamps (ms epoch) we are willing to trust for one offer.
-
-    FU's `offerOccurredAtUnknownTime` / `beforeLogin` are the plugin admitting its
-    own timing is unreliable; when either is set we discard its placement values.
-    Batch-restamped times (shared across slots) are discarded the same way.
-    """
-    out: list[int] = []
-    raw_age = slot.get("ageSeconds")
-    if raw_age is not None:
-        out.append(exported_ms - max(0, _to_int(raw_age)) * 1000)
-    created = _parse_iso(slot.get("offerCreationTime"))
-    if created:
-        out.append(int(created.timestamp() * 1000))
-    unknown = bool((timer or {}).get("offerOccurredAtUnknownTime"))
-    if not unknown and not offer.get("beforeLogin"):
-        for source in ((timer or {}).get("tradeStartTime"),
-                       offer.get("tradeStartedAt")):
-            ms = _to_int(source)
-            if ms > 0:
-                out.append(ms)
-    return [ms for ms in out
-            if ms and ms <= exported_ms + 60_000 and not _is_restamped(ms, suspects)]
-
-
-def _resolve_age_seconds(slot: dict, offer: dict, timer: dict | None,
-                         exported_at: datetime, anchors: dict,
-                         suspects: set[int] | None = None) -> float:
-    """Age in seconds from the earliest trusted placement, persisted by uuid.
-
-    Once an offer has an anchor it can only get *older* across runs, never reset
-    younger — which is exactly the relog failure mode the plugin exhibits.
-    """
-    exported_ms = int(exported_at.timestamp() * 1000)
-    uuid = offer["uuid"]
-    stored = anchors.get(uuid)
-
-    candidates = _trusted_placements_ms(slot, offer, timer, exported_ms, suspects)
-    trusted = bool(candidates)
-    if stored:
-        candidates.append(_to_int(stored.get("anchor_ms")))
-
-    if candidates:
-        anchor_ms = min(c for c in candidates if c)
-        # A stored anchor that began life as a first-observation floor stays a floor
-        # until a trusted placement time is ever seen for this uuid.
-        source = "anchor" if trusted or (stored or {}).get("source") == "anchor" else "observed"
+        raise RuntimeError("set config/settings.json rsn or keep exactly one RuneLite profile")
+    profiles = [
+        profile for profile in snapshot["profiles"]
+        if profile.get("displayName", "").casefold() == rsn.casefold()
+        and profile.get("type") == "STANDARD"
+    ]
+    selected = CONFIG.get("runelite_profile") or snapshot.get("selectedProfile")
+    if selected_profile := next((profile for profile in profiles if profile["key"] == selected), None):
+        profile = selected_profile
+    elif len(profiles) == 1:
+        profile = profiles[0]
     else:
-        anchor_ms = exported_ms
-        source = "observed"
+        raise RuntimeError(
+            f"RuneLite profile for {rsn!r} is ambiguous; set config/settings.json runelite_profile"
+        )
+    source_at = datetime.fromisoformat(profile["modifiedAt"].replace("Z", "+00:00"))
+    synced_at = datetime.fromisoformat(snapshot["generatedAt"].replace("Z", "+00:00"))
+    return profile, source_at, synced_at
 
-    first_seen = _to_int(stored.get("first_seen_ms")) if stored else exported_ms
-    anchors[uuid] = {
-        "anchor_ms": anchor_ms,
-        "first_seen_ms": min(first_seen or exported_ms, exported_ms),
-        "item_id": _to_int(slot["itemId"]),
-        "side": slot["side"],
-        "price": _to_int(slot.get("offerPrice")),
-        "source": source,
-    }
-    return max(0, (exported_ms - anchor_ms) / 1000)
+
+def _core_trades() -> list[dict]:
+    try:
+        profile, _, _ = _core_profile()
+    except RuntimeError:
+        return []
+    return profile.get("tradeHistory", [])
+
+
+def _trade_key(trade: dict) -> str:
+    return ":".join(str(trade[field]) for field in ("b", "i", "q", "p", "t"))
+
+
+def _state() -> dict:
+    try:
+        return json.loads(_STATE_PATH.read_text())
+    except FileNotFoundError:
+        return {}
+
+
+def _save_state(state: dict) -> None:
+    _STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    tmp = _STATE_PATH.with_suffix(".tmp")
+    tmp.write_text(json.dumps(state, indent=2, sort_keys=True))
+    tmp.replace(_STATE_PATH)
 
 
 def _flip_file(flip_dir: Path) -> Path | None:
     rsn = profile_rsn()
     if not rsn:
-        raise ValueError("set config/settings.json rsn or keep exactly one Flipping Utilities export")
+        return None
     profile = flip_dir / f"{rsn}.json"
     return profile if profile.exists() else None
 
 
-def _last_fill_index() -> dict[tuple[int, str, str], int]:
-    """Most recent real fill time (ms epoch) per (item id, side) from FU trade history.
-
-    FU's live ``lastOffers[slot].t`` is rewritten to the snapshot/export time on every
-    re-export (login/offer-change/config-toggle), so it cannot date a fill. The persisted
-    trade history records each terminal/partial offer's own event time, which is fill-anchored.
-    We take the newest matching event as the open offer's last-fill time; absent any match the
-    caller reports the age as unknown (None) rather than a fake just-now value.
-    """
-    flip_dir = INCOMING / "flipping"
-    index: dict[tuple[int, str, str], int] = {}
-    path = _flip_file(flip_dir) if flip_dir.exists() else None
-    if path:
-        raw = json.loads(path.read_text())
-        for record in raw["trades"]:
-            iid = _to_int(record["id"])
-            for offer in record["h"]["sO"]:
-                uuid = offer.get("uuid")
-                if not uuid:
-                    continue
-                if _offer_qty(offer) <= 0:
-                    continue
-                side = "buy" if _offer_is_buy(offer) else "sell"
-                ts = _to_int(_offer_ts(offer))
-                if ts <= 0:
-                    continue
-                key = (iid, side, uuid)
-                if ts > index.get(key, 0):
-                    index[key] = ts
-    return index
-
-
-def _current_offer_updates() -> dict[int, dict]:
+def _fu_snapshot(synced_ms: int) -> tuple[dict[int, dict], int] | None:
     path = _flip_file(INCOMING / "flipping")
     if not path:
-        return {}
+        return None
     raw = json.loads(path.read_text())
-    return {int(slot): offer for slot, offer in raw["lastOffers"].items()}
+    stored_ms = _to_int(raw.get("lastStoredAt"))
+    if not stored_ms:
+        return None
+    if synced_ms - stored_ms > FU_LIVE_MAX_AGE_MINUTES * 60_000:
+        return None
+    return ({int(slot): offer for slot, offer in raw.get("lastOffers", {}).items()}, stored_ms)
+
+
+def _side(state: str) -> str:
+    if state in {"BUYING", "BOUGHT", "CANCELLED_BUY"}:
+        return "buy"
+    if state in {"SELLING", "SOLD", "CANCELLED_SELL"}:
+        return "sell"
+    raise ValueError(f"unknown RuneLite GE state: {state}")
+
+
+def _matches(core: dict | None, item_id: int, side: str, qty: int) -> bool:
+    return bool(
+        core
+        and _to_int(core.get("itemId")) == item_id
+        and _side(str(core.get("state")).upper()) == side
+        and _to_int(core.get("totalQuantity")) == qty
+    )
+
+
+def _match_intent(
+    item_id: int,
+    side: str,
+    qty: int,
+    price: int | None,
+    pending: list[dict],
+) -> dict | None:
+    candidates = [
+        intent for intent in pending
+        if _to_int(intent["item_id"]) == item_id
+        and intent["side"] == side
+        and _to_int(intent["qty"]) == qty
+    ]
+    if not candidates:
+        return None
+    if len(candidates) > 1 and not price:
+        return None
+    return min(
+        candidates,
+        key=lambda row: abs(_to_int(row["price"]) - (price or 0)),
+    )
+
+
+def read_open_offers() -> list[dict]:
+    """Reconcile fresh FU slots with exact core prices, history, and intents."""
+    from . import intents
+
+    profile, observed_at, synced_at = _core_profile()
+    core_ms = int(observed_at.timestamp() * 1000)
+    synced_ms = int(synced_at.timestamp() * 1000)
+    rsn = profile["displayName"]
+    previous = _state()
+    same_profile = previous.get("profile_key") == profile["key"]
+    previous_offers = previous.get("offers", {}) if same_profile else {}
+    pending = intents.read_intents(rsn)
+    consumed: set[str] = set()
+    fu_snapshot = _fu_snapshot(synced_ms)
+    updates, fu_ms = fu_snapshot or ({}, 0)
+    core_offers = profile.get("offers", {})
+    slots = sorted(updates) if fu_snapshot else sorted(int(slot) for slot in core_offers)
+    current: dict[str, dict] = {}
+    out: list[dict] = []
+
+    for slot in slots:
+        update = updates.get(slot)
+        core = core_offers.get(str(slot))
+        if update:
+            state = str(update["st"]).upper()
+            item_id = _to_int(update["id"])
+            side = "buy" if _offer_is_buy(update) else "sell"
+            qty = _to_int(update["tQIT"])
+            filled_qty = _to_int(update["cQIT"])
+            source = "flipping_utilities"
+            observed_ms = fu_ms
+            uuid = update.get("uuid")
+            identity = f"fu:{uuid}" if uuid else f"fu:{slot}:{item_id}:{side}:{qty}"
+        else:
+            state = str(core["state"]).upper()
+            item_id = _to_int(core["itemId"])
+            side = _side(state)
+            qty = _to_int(core["totalQuantity"])
+            filled_qty = _to_int(core["quantitySold"])
+            source = "runelite"
+            observed_ms = core_ms
+            identity = f"core:{slot}:{item_id}:{side}:{qty}:{_to_int(core['price'])}"
+
+        old = previous_offers.get(str(slot))
+        same_offer = bool(old and old["identity"] == identity)
+
+        placed_ms = old["placed_ms"] if same_offer else observed_ms
+        age_is_floor = old["age_is_floor"] if same_offer else True
+        if update and not update.get("beforeLogin") and _to_int(update.get("tradeStartedAt")):
+            placed_ms = min(placed_ms, _to_int(update["tradeStartedAt"]))
+            age_is_floor = False
+
+        last_fill_ms = old["last_fill_ms"] if same_offer else None
+        if same_offer and filled_qty > _to_int(old["filled_qty"]):
+            last_fill_ms = _to_int((update or {}).get("t")) or observed_ms
+        elif not same_offer and filled_qty > 0 and update and not update.get("beforeLogin"):
+            last_fill_ms = _to_int(update.get("t")) or None
+
+        intent = old.get("intent") if same_offer else None
+        if not intent:
+            intent = _match_intent(
+                item_id,
+                side,
+                qty,
+                _to_int((core or {}).get("price")) or None,
+                [row for row in pending if row["intent_id"] not in consumed],
+            )
+            if intent:
+                consumed.add(intent["intent_id"])
+
+        core_matches = _matches(core, item_id, side, qty)
+        started_ms = (
+            _to_int(update.get("tradeStartedAt"))
+            if update and not update.get("beforeLogin") else 0
+        )
+        core_is_current = core_matches and (
+            not started_ms or core_ms >= started_ms
+        )
+        if core_is_current:
+            price = _to_int(core["price"])
+            price_source = "runelite"
+        elif same_offer and old.get("price"):
+            price = old["price"]
+            price_source = old["price_source"]
+        elif intent:
+            price = _to_int(intent["price"])
+            price_source = "intent"
+        else:
+            price = None
+            price_source = "unknown"
+
+        current[str(slot)] = {
+            "identity": identity,
+            "item_id": item_id,
+            "side": side,
+            "qty": qty,
+            "price": price,
+            "price_source": price_source,
+            "filled_qty": filled_qty,
+            "placed_ms": placed_ms,
+            "age_is_floor": age_is_floor,
+            "last_fill_ms": last_fill_ms,
+            "intent": intent,
+        }
+        last_fill = (
+            datetime.fromtimestamp(last_fill_ms / 1000, tz=timezone.utc)
+            if last_fill_ms else None
+        )
+        planner_state = (
+            "FILLED" if state in {"BOUGHT", "SOLD"}
+            else "CANCELLED" if state in {"CANCELLED_BUY", "CANCELLED_SELL"}
+            else "ACTIVE"
+        )
+        out.append({
+            "slot": slot,
+            "id": item_id,
+            "side": side,
+            "qty": qty,
+            "filled_qty": filled_qty,
+            "price": price,
+            "price_source": price_source,
+            "source": source,
+            "intent_id": intent.get("intent_id") if intent else None,
+            "strategy": intent.get("strategy") if intent else None,
+            "note": intent.get("note") if intent else None,
+            "hard_exit_at": intent.get("hard_exit_at") if intent else None,
+            "age_hours": round(max(0, synced_ms - placed_ms) / 3_600_000, 2),
+            "age_is_floor": age_is_floor,
+            "last_fill_at": last_fill.isoformat(timespec="seconds") if last_fill else None,
+            "last_fill_age_hours": (
+                round(max(0, synced_ms - last_fill_ms) / 3_600_000, 2)
+                if last_fill_ms else None
+            ),
+            "state": planner_state,
+        })
+
+    trades = profile.get("tradeHistory", [])
+    trade_keys = {_trade_key(trade) for trade in trades}
+    completed = list(previous.get("completed", [])) if same_profile else []
+    if same_profile:
+        previous_trade_keys = set(previous.get("trade_keys", []))
+        for trade in trades:
+            key = _trade_key(trade)
+            if key in previous_trade_keys:
+                continue
+            side = "buy" if trade["b"] else "sell"
+            iid = _to_int(trade["i"])
+            qty = _to_int(trade["q"])
+            linked = next((
+                row.get("intent") for row in [*previous_offers.values(), *current.values()]
+                if row.get("intent") and row.get("item_id") == iid and row.get("side") == side
+                and (row.get("qty") == qty or row.get("filled_qty") == qty)
+            ), None)
+            if not linked:
+                linked = _match_intent(
+                    iid,
+                    side,
+                    qty,
+                    _to_int(trade["p"]),
+                    [row for row in pending if row["intent_id"] not in consumed],
+                )
+            if linked:
+                consumed.add(linked["intent_id"])
+            completed.append({
+                "key": key,
+                "item_id": iid,
+                "side": side,
+                "qty": qty,
+                "price": _to_int(trade["p"]),
+                "timestamp": trade["t"],
+                "intent": linked,
+            })
+
+    _save_state({
+        "profile_key": profile["key"],
+        "rsn": rsn,
+        "slot_source": "flipping_utilities" if fu_snapshot else "runelite",
+        "flipping_utilities_stored_at": (
+            datetime.fromtimestamp(fu_ms / 1000, tz=timezone.utc).isoformat()
+            if fu_snapshot else None
+        ),
+        "observed_at": observed_at.isoformat(),
+        "synced_at": synced_at.isoformat(),
+        "offers": current,
+        "trade_keys": sorted(trade_keys),
+        "completed": completed[-1024:],
+    })
+    intents.consume_intents(rsn, consumed)
+    return out
+
+
+def read_recovered_buys() -> list[dict]:
+    """Tracked bought inventory whose GE offer disappeared before observation."""
+    state = _state()
+    current_items = {offer["item_id"] for offer in state.get("offers", {}).values()}
+    lots: list[dict] = []
+    for trade in sorted(state.get("completed", []), key=lambda row: _to_int(row["timestamp"])):
+        item_id = trade["item_id"]
+        if trade["side"] == "buy":
+            if trade.get("intent"):
+                lots.append({**trade, "remaining_qty": trade["qty"]})
+            continue
+        remaining = trade["qty"]
+        for lot in lots:
+            if lot["item_id"] != item_id or lot["remaining_qty"] <= 0:
+                continue
+            sold = min(remaining, lot["remaining_qty"])
+            lot["remaining_qty"] -= sold
+            remaining -= sold
+            if remaining == 0:
+                break
+
+    grouped: dict[int, dict] = {}
+    for lot in lots:
+        qty = lot["remaining_qty"]
+        item_id = lot["item_id"]
+        if qty <= 0 or item_id in current_items:
+            continue
+        row = grouped.setdefault(item_id, {
+            "id": item_id,
+            "side": "buy",
+            "qty": 0,
+            "filled_qty": 0,
+            "cost": 0,
+            "intent_id": lot["intent"]["intent_id"],
+            "strategy": lot["intent"].get("strategy"),
+            "hard_exit_at": lot["intent"].get("hard_exit_at"),
+            "source": "recovered_trade",
+        })
+        row["qty"] += qty
+        row["filled_qty"] += qty
+        row["cost"] += qty * lot["price"]
+
+    for row in grouped.values():
+        row["price"] = round(row.pop("cost") / row["qty"])
+    return list(grouped.values())
 
 
 def _main(argv: list[str]) -> int:
@@ -621,6 +632,17 @@ def _main(argv: list[str]) -> int:
             out = read_flips()
         elif cmd == "offers":
             out = read_open_offers()
+        elif cmd == "status":
+            offers = read_open_offers()
+            state = _state()
+            out = {
+                "profile": state["rsn"],
+                "slot_source": state["slot_source"],
+                "flipping_utilities_stored_at": state["flipping_utilities_stored_at"],
+                "offers": len(offers),
+                "recovered_buys": len(read_recovered_buys()),
+                "synced_at": state["synced_at"],
+            }
         else:
             print(__doc__)
             return 2

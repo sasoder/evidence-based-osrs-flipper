@@ -1,7 +1,7 @@
 # Evidence-Based OSRS Flipper
 
-**Evidence-Based OSRS Flipper is an OSRS Grand Exchange flipping advisor.** It reads your
-Flipping Utilities data, checks OSRS Wiki prices, and gives you exact buy/sell/cancel/reprice
+**Evidence-Based OSRS Flipper is an OSRS Grand Exchange flipping advisor.** It reads RuneLite's
+local GE state, checks OSRS Wiki prices, and gives you exact buy/sell/cancel/reprice
 instructions to type into the GE. It never touches the game, you still place every offer
 yourself.
 
@@ -26,16 +26,14 @@ commands with `python` instead of `uv run python`.
    git clone https://github.com/sasoder/evidence-based-osrs-flipper.git
    cd evidence-based-osrs-flipper
   ```
-2. **Set up the [RuneLite plugin fork](https://github.com/sasoder/rl-plugin) yourself (recommended).**
-  The full workflow needs this version of Flipping Utilities so it can see your current GE slots
-  and tag the offers it suggests. Remove the Plugin Hub version, then follow the fork README to
-  build and run it. A normal RuneLite or Jagex Launcher client will not load the fork. Once it is
-  running, enable the plugin, set auto-save to one minute, and turn on "Export current GE slots."
-  If you'd rather have your agent help with this, skip to step 3.
-3. **Open the repo in your agent and run `/setup`.** It checks Python and the RuneLite connection.
-  If you skipped step 2, tell it you need help setting up the plugin fork. It can handle the clone,
-  build, and launch steps, although you will still need to log in and enable the plugin settings
-  yourself. Once everything is connected, setup asks for your OSRS Wiki contact, your RSN if it
+2. **Launch normal RuneLite, enable its built-in Grand Exchange plugin, and log in once.** The
+  plugin is included with RuneLite, so there is nothing extra to download. The Plugin Hub version
+  of Flipping Utilities is optional but strongly recommended: enable auto-save and set it to one
+  minute. It supplies fast slot/fill/timestamp updates, while RuneLite core confirms exact prices.
+  Without Flipping Utilities, the harness still works but changes can take about five minutes to
+  reach RuneLite's profile file. No fork or development client is needed.
+3. **Open the repo in your agent and run `/setup`.** It checks Python and the local RuneLite data.
+  Once everything is connected, setup asks for your OSRS Wiki contact, your RSN if it
   finds more than one RuneLite profile, and any subreddits you want the optional research pass to
   read. It saves those answers in gitignored `config/settings.json`. With one profile and no Reddit
   sources, you do not need a config file at all.
@@ -46,13 +44,13 @@ Then just talk to it: *"50m liquid, what should I buy?"*
 
 Typical requests, in plain chat:
 
-- **"50m liquid, what should I do?"** — syncs your exports, checks every open offer (hold, cancel, collect, or reprice), then fills free slots. Offer-only review works the same way with no cash: *"what should I do with my current offers?"*
+- **"I have 50m spendable outside the GE; what should I do?"** — syncs your data, checks every open offer (hold, cancel, collect, or reprice), then fills free slots. Offer-only review works the same way with no cash: *"what should I do with my current offers?"*
 - **"Are the items I usually flip still good right now?"** — reads your Flipping Utilities history, re-checks those winners against today's prices and the same gates, and only keeps ones that still clear.
 - **"Going to bed, 120m."** — overnight mode: sizes positions to a 12-hour window.
 - **"Only active flips, max 5 slots."** — preferences go straight to the planner as hard limits.
 - **"Anything being talked about that's worth flipping?"** — optional research pass over the OSRS news feed and Reddit. It re-ranks trades that already passed the evidence gates (and is the only way a breaking market gets bought into), but it never invents a trade.
 
-If your message doesn't include the numbers, the agent asks: liquid GP, whether you'll be
+If your message doesn't include the numbers, the agent asks: spendable GP outside GE offers, whether you'll be
 around, which strategies, and slot cap. A plan looks like this:
 
 
@@ -85,11 +83,19 @@ Each strategy has its own checks:
 Items compete for free slots by expected realized gp/hour from that replayed evidence, not just the live spread. Quantity is capped by GE limit, expected fills, budget, and (for patient/time) per-position downside; active shares one lane-wide downside budget. Each slot must clear a flat 1,000gp profit floor and a capital-return floor. When filters leave liquid unspent, the plan names the binding constraint instead of inventing weak fills.
 
 Each call is also saved as an intent with its item, side, quantity, intended price, strategy,
-reason, and prediction. The plugin matches the item, side, and quantity, so changing the price will
-not stop it from tagging the offer. The planner still gives you one concrete price because the call
-needs to be something you can actually place and measure. Later runs grade it against your real
+reason, and prediction. On the next fresh Flipping Utilities autosave, the harness matches item,
+side, and quantity; changing the price will not stop it from binding the intent. Its intended price
+is clearly marked provisional until RuneLite core confirms what was actually entered. The planner
+still gives you one concrete price because the call needs to be something you can execute and measure. Later runs grade it against your real
 fills. Items that have worked well for you before can join the candidate pool and use your own fill
 history for sizing, but they still have to pass the same checks as everything else.
+
+Partial fills stay attached to the strategy that opened them. The planner may keep the remaining
+buy when its entry is still valid; if the remainder should be cancelled or repriced, it instead
+cancels that remainder and creates a sell instruction for exactly the units already acquired.
+Tracked buys collected between runs are recovered from RuneLite's terminal trade history rather
+than disappearing from the plan. Filled sell offers are collected to free their slots, and their
+net proceeds—plus refunds from buys the plan cancels—join the same run's deployable budget.
 
 ## CLI
 
@@ -99,18 +105,19 @@ The planner is a plain CLI underneath, if you want a plan without the agent:
 uv run python -m flipper.plan --cash 50000000 --strategies active --max-new-slots 5 --write-intents --markdown
 ```
 
-- `--cash <gp>`: liquid GP to size against. Required.
+- `--cash <gp>`: spendable GP currently outside GE offers. Required; collect/cancel proceeds are added automatically.
 - `--strategies patient,active,time,probe`: enabled strategies, or presets like `balanced` and `conservative`.
 - `--max-new-slots <n>`: cap new offers after checking current offers.
 - `--horizon overnight`: drop keyboard-dependent strategies and size for 12h away.
-- `--write-intents`: queue order identities, intended prices, and evidence for the plugin fork.
+- `--write-intents`: queue order identities, intended prices, and evidence for the next sync.
 - `--report-personal-history`: show historical FU items that did not clear today's checks.
 
 ## Runtime data
 
-Your exports and local state stay on disk and out of git:
-`data/incoming/flipping/`, `data/incoming/ge-slots/`, `state/offer_ages.json`,
-`state/offer_fills.json`.
+Your RuneLite snapshot, optional Flipping Utilities history, and reconciled offer state stay on
+disk and out of git: `data/incoming/runelite/`, `data/incoming/flipping/`, and `state/`.
+On Windows, RuneLite's normal location is `%USERPROFILE%\.runelite`; the same automatic discovery
+works there, with `RUNELITE_HOME` available for non-default installations.
 
 ## Why "Evidence"?
 

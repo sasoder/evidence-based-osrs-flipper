@@ -9,7 +9,7 @@ event. Otherwise skip it; it usually adds latency and often produces no overlay.
 First run the normal planner JSON and the research brief:
 
 ```bash
-uv run python -m flipper.plan --cash <liquid_gp>
+uv run python -m flipper.plan --cash <spendable_gp>
 uv run python -m flipper.research brief
 ```
 
@@ -27,7 +27,7 @@ If research surfaces nothing actionable, stop and run the normal one-shot final 
 an overlay. If there is an actionable overlay, run the final deterministic plan once with it:
 
 ```bash
-uv run python -m flipper.plan --cash <liquid_gp> \
+uv run python -m flipper.plan --cash <spendable_gp> \
     --overlay overlay.json --write-intents --markdown
 ```
 
