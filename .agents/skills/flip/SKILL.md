@@ -1,6 +1,6 @@
 ---
 name: flip
-description: Run an on-demand OSRS GE flipping planning session. Use when the user asks what to buy, asks for a flip plan, or asks for merchanting advice from Flipping Utilities exports and flipper.plan.
+description: Run an on-demand OSRS GE flipping planning session. Use when the user asks what to buy, asks for a flip plan, or asks for merchanting advice from RuneLite data and flipper.plan.
 ---
 
 # Flip Planning Workflow

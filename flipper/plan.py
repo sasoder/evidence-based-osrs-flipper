@@ -1523,7 +1523,7 @@ def _main(argv: list[str]) -> int:
     ap.add_argument("--max-new-slots", type=int, default=None,
                     help="maximum number of new buy offers to recommend after checking open offers")
     ap.add_argument("--write-intents", action="store_true",
-                    help="write pending FU intent tags for new recommendations")
+                    help="record pending order intents for reconciliation on the next sync")
     ap.add_argument(
         "--report-personal-history",
         action="store_true",

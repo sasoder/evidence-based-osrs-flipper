@@ -27,9 +27,10 @@ You need RuneLite, Python 3.11+, and a coding agent like
    cd evidence-based-osrs-flipper
    ```
 
-2. **Open RuneLite and enable Grand Exchange.** Installing Flipping Utilities from the Plugin Hub
-   is recommended for faster slot and fill updates; enable auto-save and set its interval to one
-   minute.
+2. **Open RuneLite and make sure its built-in Grand Exchange plugin is enabled.** Flipping
+   Utilities from the Plugin Hub is optional but highly recommended for faster slot and fill
+   updates; enable auto-save and set its interval to one minute. No custom plugin or RuneLite fork
+   is needed.
 
    <p align="center">
      <img src="images/runelite-grand-exchange.png" alt="Grand Exchange enabled in RuneLite" width="230">
@@ -37,8 +38,8 @@ You need RuneLite, Python 3.11+, and a coding agent like
      <img src="images/flipping-utilities-autosave.png" alt="Flipping Utilities auto-save interval set to one minute" width="240">
    </p>
 
-3. **Open the repo in your agent and run `/setup`.** Follow the prompts, then log in and open the
-   Grand Exchange once.
+3. **Open the repo in your agent and run `/setup`.** Follow the prompts while it installs what is
+   needed and verifies the RuneLite connection.
 
 Then just talk to it: *"I have 50m spendable outside the GE; what should I buy?"*
 
@@ -47,7 +48,7 @@ Then just talk to it: *"I have 50m spendable outside the GE; what should I buy?"
 Typical requests, in plain chat:
 
 - **"I have 50m spendable outside the GE; what should I do?"** — syncs your data, checks every open offer (hold, cancel, collect, or reprice), then fills free slots. Offer-only review works the same way with no cash: *"what should I do with my current offers?"*
-- **"Are the items I usually flip still good right now?"** — reads your Flipping Utilities history, re-checks those winners against today's prices and the same gates, and only keeps ones that still clear.
+- **"Are the items I usually flip still good right now?"** — if you use Flipping Utilities, reads your history, re-checks those winners against today's prices and the same gates, and only keeps ones that still clear.
 - **"Going to bed, 120m."** — overnight mode: sizes positions to a 12-hour window.
 - **"Only active flips, max 5 slots."** — preferences go straight to the planner as hard limits.
 - **"Anything being talked about that's worth flipping?"** — optional research pass over the OSRS news feed and Reddit. It re-ranks trades that already passed the evidence gates (and is the only way a breaking market gets bought into), but it never invents a trade.
