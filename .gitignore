@@ -12,7 +12,7 @@ data/archives/
 
 # RuneLite runtime snapshots are local inputs, never committed
 data/incoming/flipping/
-data/incoming/ge-slots/
+data/incoming/runelite/
 
 # local config
 config/settings.json

@@ -41,12 +41,12 @@ PATIENT_READY_MAX_DISTANCE_PCT = 2.5
 # block asks whether today's price would also have worked in an older market — a different question
 # from whether the trade works now, and one that gets harder to pass the further back it reaches.
 # The API returns 365 points, which at 6h is three months: items that traded at another price level
-# in May were vetoing today's flip, and 70 of 80 time-lane seeds died that way.
+# in May were vetoing today's flip, and 70 of 80 time-strategy seeds died that way.
 #
 # Blocks, not days, because the unit that matters is the sample the evidence bar is computed from.
 # Twenty is comfortably above the three-block minimum, so the bar keeps its power, and it scales
-# with each lane's own horizon: the 12h patient lane looks back about a fortnight and the 30h time
-# lane about a month, which is the right shape.
+# with each strategy's own horizon: the 12h patient strategy looks back about a fortnight and the
+# 30h time strategy about a month, which is the right shape.
 REPLAY_EVIDENCE_BLOCKS = 20
 
 
@@ -69,8 +69,8 @@ def _patient_replay_shape(entry_hours: float, timestep: str) -> tuple[int, int, 
     hold_points = max(1, math.ceil(MAX_HOLD_HOURS / step_hours))
     return entry_points, hold_points, step_hours
 
-# Active-margin lane: short-lived, high-value opportunities are structurally different from
-# patient percentile-band flips. These constants deliberately keep that lane narrow and small.
+# Active-margin strategy: short-lived, high-value opportunities are structurally different from
+# patient percentile-band flips. These constants deliberately keep that strategy narrow and small.
 ACTIVE_MIN_PRICE = 1_000_000
 # There is deliberately no absolute per-unit margin floor. Whether a position is worth a slot is a
 # question about the slot's total profit, and plan.py already asks it twice — MIN_SLOT_PROFIT_GP and
@@ -87,7 +87,7 @@ ACTIVE_RECENT_POINTS = 12      # one hour of 5m observations
 ACTIVE_HORIZON_HOURS = 1.5
 ACTIVE_PARTICIPATION_RATE = 0.25
 ACTIVE_MAX_EXIT_PROBABILITY = 0.90
-# Evidence quorum for the active lane's replay. Three completed round trips and two distinct entry
+# Evidence quorum for the active strategy's replay. Three completed round trips and two distinct entry
 # episodes is the same bar the patient and time replays apply in their own `qualifies`; a single
 # lucky window should never qualify an order. The win rate is separate on purpose — one large win
 # among many small losses clears a positive mean but not a 60% hit rate.
@@ -100,7 +100,7 @@ ACTIVE_MIN_EDGE_TO_RISK = 1.0  # expected after-tax edge per unit must at least 
 
 # Time-of-day experiment: 6h points provide roughly three months of repeated daily windows.
 # The selected hold window is chosen on the older 70% and must remain profitable on the newest
-# 30%, so this lane does not promote a pattern merely because it fits the whole sample.
+# 30%, so this strategy does not promote a pattern merely because it fits the whole sample.
 TIME_OF_DAY_TIMESTEP = "6h"
 TIME_OF_DAY_STEP_HOURS = 6
 TIME_OF_DAY_BUCKETS = 24 // TIME_OF_DAY_STEP_HOURS
@@ -108,7 +108,7 @@ TIME_OF_DAY_MAX_HOLD_STEPS = 4
 TIME_OF_DAY_MIN_TRAIN_TRADES = 40
 # Lowered from 20 during the replay work with no reason recorded, which a review flagged. Measured
 # rather than argued: at 20 the synthetic cohort — the one whose 6h history is production-deep at
-# 240 rows — produces no time-lane orders at all and scores 53,581,517 gp of withheld utility; at
+# 240 rows — produces no time-strategy orders at all and scores 53,581,517 gp of withheld utility; at
 # 12 it produces 180 orders and scores 57,789,701. The looser bar is worth 4.2m, so it stays.
 TIME_OF_DAY_MIN_TEST_TRADES = 12
 TIME_OF_DAY_MIN_WIN_RATE = 0.60
@@ -245,7 +245,7 @@ def _patient_order_replay(
     filled_quantities = []
     # Distinct entry occasions that produced a graded outcome. Counting raw touches let an
     # entry with no complete horizon after it — the trailing one, always — pad the quorum
-    # `qualifies` checks, which is the same overcount the active lane already dropped.
+    # `qualifies` checks, which is the same overcount the active strategy already dropped.
     episodes = 0
     # Align complete horizons to the current decision boundary. Starting from
     # the oldest cache row can discard the newest partial horizon and grade a
@@ -767,7 +767,7 @@ def scan(seed_limit: int | None = 40, limit: int | None = 20, min_volume: int = 
 
 
 def _active_short_drift(rows: list[dict]) -> float | None:
-    """Recent midpoint drift for the active lane.
+    """Recent midpoint drift for the active strategy.
 
     High-value items are sparse, so only use rows where both sides traded. Fewer than four
     complete points is reported as unknown rather than fabricated from one-sided prints.
@@ -1080,7 +1080,7 @@ def _time_replay_evidence(
     quantity: int,
     entry_bucket: int,
 ) -> dict:
-    """Replay one current time-lane order through 24-hour blocks.
+    """Replay one current time-strategy order through 24-hour blocks.
 
     `entry_bucket` is the UTC six-hour window the pattern actually buys in, and it is required:
     a day is four 6h buckets and a block is five, so any walk that is not anchored to the entry
@@ -1205,11 +1205,9 @@ def time_of_day_signal(item_id: int) -> dict | None:
     if fillable_qty <= 0:
         return None
 
-    # A daily pattern needs enough whole days to be a pattern at all. Items with less history
-    # than that are not admitted on a weaker standard: the previous short-history fallback asserted
-    # a hardcoded win_rate of 1.0, aliased one evidence record into both `train` and `test`, and
-    # reported regime "unknown" so the regime gate could not fire — maximum stated confidence on
-    # the least data, feeding the lane with the worst measured outcomes.
+    # A daily pattern needs enough whole days to be a pattern at all. Items with less history are
+    # not admitted on weaker synthetic evidence; train/test separation and a known regime are hard
+    # requirements.
     if len(rows) < 120:
         return None
 

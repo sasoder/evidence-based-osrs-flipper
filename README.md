@@ -1,7 +1,7 @@
 # Evidence-Based OSRS Flipper
 
-**Evidence-Based OSRS Flipper is an OSRS Grand Exchange flipping advisor.** It reads your
-Flipping Utilities data, checks OSRS Wiki prices, and gives you exact buy/sell/cancel/reprice
+**Evidence-Based OSRS Flipper is an OSRS Grand Exchange flipping advisor.** It reads RuneLite's
+local GE state, checks OSRS Wiki prices, and gives you exact buy/sell/cancel/reprice
 instructions to type into the GE. It never touches the game, you still place every offer
 yourself.
 
@@ -10,49 +10,52 @@ yourself.
   <img src="images/demo.png" alt="Asking the agent for a flip plan and getting back an action table" width="700">
 </p>
 
-Each recommendation records why it was made and what it expects to happen (direction, target, and deadline). Later runs check those calls against what actually filled.
+Each recommendation records why it was made, its target, and its deadline. Later runs reconcile
+those instructions with the offers and fills RuneLite observed.
 
 Inspired by Leverage In Action's
 ["I Tried Using Data Science to Profit in a Video Game Economy"](https://www.youtube.com/watch?v=FhTLApOoWX8).
 
 ## Getting started
 
-You need Python 3.11+ and a coding agent like [Claude](https://claude.com/download) or [ChatGPT](https://openai.com/index/introducing-the-codex-app/), unless you want to use the CLI yourself. Clone the repo with Git to keep the repo up to date easily, or download the ZIP to get started without it. The examples use
-[uv](https://docs.astral.sh/uv/). If you already manage Python with venv or conda, run the same
-commands with `python` instead of `uv run python`.
+You need RuneLite, Python 3.11+, and a coding agent like
+[Claude](https://claude.com/download) or [Codex](https://openai.com/codex/). The commands below use
+[uv](https://docs.astral.sh/uv/); with an activated Python environment, omit `uv run`.
 
-1. **Get the repo** (clone it, or [download it as a ZIP](https://github.com/sasoder/evidence-based-osrs-flipper/archive/refs/heads/main.zip) and unzip it)
-  ```bash
+1. **Get the repo.** Clone it, or [download the ZIP](https://github.com/sasoder/evidence-based-osrs-flipper/archive/refs/heads/main.zip) and unzip it.
+
+   ```bash
    git clone https://github.com/sasoder/evidence-based-osrs-flipper.git
    cd evidence-based-osrs-flipper
-  ```
-2. **Set up the [RuneLite plugin fork](https://github.com/sasoder/rl-plugin) yourself (recommended).**
-  The full workflow needs this version of Flipping Utilities so it can see your current GE slots
-  and tag the offers it suggests. Remove the Plugin Hub version, then follow the fork README to
-  build and run it. A normal RuneLite or Jagex Launcher client will not load the fork. Once it is
-  running, enable the plugin, set auto-save to one minute, and turn on "Export current GE slots."
-  If you'd rather have your agent help with this, skip to step 3.
-3. **Open the repo in your agent and run `/setup`.** It checks Python and the RuneLite connection.
-  If you skipped step 2, tell it you need help setting up the plugin fork. It can handle the clone,
-  build, and launch steps, although you will still need to log in and enable the plugin settings
-  yourself. Once everything is connected, setup asks for your OSRS Wiki contact, your RSN if it
-  finds more than one RuneLite profile, and any subreddits you want the optional research pass to
-  read. It saves those answers in gitignored `config/settings.json`. With one profile and no Reddit
-  sources, you do not need a config file at all.
+   ```
 
-Then just talk to it: *"50m liquid, what should I buy?"*
+2. **Open RuneLite and make sure its built-in Grand Exchange plugin is enabled.** Flipping
+   Utilities from the Plugin Hub is optional but highly recommended for faster slot and fill
+   updates; enable auto-save and set its interval to one minute. Only standard RuneLite plugins
+   are used.
+
+   <p align="center">
+     <img src="images/runelite-grand-exchange.png" alt="Grand Exchange enabled in RuneLite" width="230">
+     <img src="images/flipping-utilities-plugin-hub.png" alt="Flipping Utilities in the RuneLite Plugin Hub" width="230">
+     <img src="images/flipping-utilities-autosave.png" alt="Flipping Utilities auto-save interval set to one minute" width="240">
+   </p>
+
+3. **Open the repo in your agent and ask it to set up the project.** Use `/setup` when your agent
+   supports skill commands. Follow the prompts while it verifies Python and the RuneLite connection.
+
+Then just talk to it: *"I have 50m spendable outside the GE; what should I buy?"*
 
 ## Using it
 
 Typical requests, in plain chat:
 
-- **"50m liquid, what should I do?"** — syncs your exports, checks every open offer (hold, cancel, collect, or reprice), then fills free slots. Offer-only review works the same way with no cash: *"what should I do with my current offers?"*
-- **"Are the items I usually flip still good right now?"** — reads your Flipping Utilities history, re-checks those winners against today's prices and the same gates, and only keeps ones that still clear.
+- **"I have 50m spendable outside the GE; what should I do?"** — syncs your data, checks every open offer (hold, cancel, collect, or reprice), then fills free slots. Offer-only review works the same way with no cash: *"what should I do with my current offers?"*
+- **"Are the items I usually flip still good right now?"** — if you use Flipping Utilities, reads your history, re-checks those winners against today's prices and the same gates, and only keeps ones that still clear.
 - **"Going to bed, 120m."** — overnight mode: sizes positions to a 12-hour window.
 - **"Only active flips, max 5 slots."** — preferences go straight to the planner as hard limits.
 - **"Anything being talked about that's worth flipping?"** — optional research pass over the OSRS news feed and Reddit. It re-ranks trades that already passed the evidence gates (and is the only way a breaking market gets bought into), but it never invents a trade.
 
-If your message doesn't include the numbers, the agent asks: liquid GP, whether you'll be
+If your message doesn't include the numbers, the agent asks: spendable GP outside GE offers, whether you'll be
 around, which strategies, and slot cap. A plan looks like this:
 
 
@@ -67,50 +70,45 @@ commits (`capital`), and its expected after-tax profit, so you can check the cal
 
 ## How it decides
 
-The LLM is not choosing trades. The planner (`flipper.plan`) does the ranking, sizing, open-offer checks, and formatting. The agent just collects your inputs, runs it once, and presents the results.
-
-Patient buy/sell bands come from percentiles over recent hourly prices (buy near the 35th percentile of instant-sells, sell near the 75th of instant-buys). Live plans post at today's executable prices when those sit close enough to the band, and every margin is after GE tax. Open offers are checked before anything new is suggested: zero-fill buys cancel after 4h, old sells move toward the live bid, and the hard exit is counted even at a loss.
-
-Each strategy has its own checks:
+The agent does not pick trades itself. A deterministic planner checks your open offers first, then
+ranks and sizes new trades using current prices, recent history, liquidity, GE tax, and downside.
+Weak opportunities are rejected rather than used to fill slots.
 
 
-| strategy    | horizon                     | must pass                                                                                                                                                                                                 |
-| ----------- | --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **patient** | 2-6h holds, 12h hard exit   | live price near the buy band; 6h regime/trend check; today's buy/sell prices replay profitably over recent history, including forced exits                                                                |
-| **active**  | 15-90m, items from 1m up    | fresh two-sided quotes, ROI floor, real flow on both sides; repeatable positive replay; sized so forced-exit downside fits a shared lane risk budget                                                       |
-| **time**    | recurring UTC windows       | picked on older data, still profitable on newer holdout data, and today's prices also clear a replay with forced exits                                                                                    |
-| **probe**   | small near-band experiments | same replay gate as patient, but fill reachability is unvalidated; capped at 5% of liquid in total                                                                                                        |
+| strategy    | approach                                      |
+| ----------- | --------------------------------------------- |
+| **patient** | Buy near a historical band and hold for hours |
+| **active**  | Short, liquid flips with fresh two-sided flow |
+| **time**    | Recurring opportunities at specific UTC hours |
+| **probe**   | Small tests of promising patient entries     |
 
 
-Items compete for free slots by expected realized gp/hour from that replayed evidence, not just the live spread. Quantity is capped by GE limit, expected fills, budget, and (for patient/time) per-position downside; active shares one lane-wide downside budget. Each slot must clear a flat 1,000gp profit floor and a capital-return floor. When filters leave liquid unspent, the plan names the binding constraint instead of inventing weak fills.
-
-Each call is also saved as an intent with its item, side, quantity, intended price, strategy,
-reason, and prediction. The plugin matches the item, side, and quantity, so changing the price will
-not stop it from tagging the offer. The planner still gives you one concrete price because the call
-needs to be something you can actually place and measure. Later runs grade it against your real
-fills. Items that have worked well for you before can join the candidate pool and use your own fill
-history for sizing, but they still have to pass the same checks as everything else.
+Every recommendation is an exact order with a reason, target, and deadline. Later runs reconcile
+it with real offers and fills, including partial fills and completed trades, so the planner can
+hold, cancel, collect, reprice, or sell the position as conditions change.
 
 ## CLI
 
 The planner is a plain CLI underneath, if you want a plan without the agent:
 
 ```bash
+uv run python -m flipper.sync
 uv run python -m flipper.plan --cash 50000000 --strategies active --max-new-slots 5 --write-intents --markdown
 ```
 
-- `--cash <gp>`: liquid GP to size against. Required.
+- `--cash <gp>`: spendable GP currently outside GE offers. Required; collect/cancel proceeds are added automatically.
 - `--strategies patient,active,time,probe`: enabled strategies, or presets like `balanced` and `conservative`.
 - `--max-new-slots <n>`: cap new offers after checking current offers.
 - `--horizon overnight`: drop keyboard-dependent strategies and size for 12h away.
-- `--write-intents`: queue order identities, intended prices, and evidence for the plugin fork.
+- `--write-intents`: queue order identities, intended prices, and evidence for the next sync.
 - `--report-personal-history`: show historical FU items that did not clear today's checks.
 
 ## Runtime data
 
-Your exports and local state stay on disk and out of git:
-`data/incoming/flipping/`, `data/incoming/ge-slots/`, `state/offer_ages.json`,
-`state/offer_fills.json`.
+Your RuneLite snapshot, optional Flipping Utilities history, and reconciled offer state stay on
+disk and out of git: `data/incoming/runelite/`, `data/incoming/flipping/`, and `state/`.
+On Windows, RuneLite's default data directory is `%USERPROFILE%\.runelite`; automatic discovery
+works there, with `RUNELITE_HOME` available for non-default installations.
 
 ## Why "Evidence"?
 
@@ -129,3 +127,9 @@ wasn't poor.
 ```bash
 uv run python -m unittest
 ```
+
+## Contributing
+
+Pull requests are welcome. Read `AGENTS.md`, keep trade selection inside the deterministic planner,
+run the test suite above, and never commit files from `data/incoming/`, `state/`, or
+`config/settings.json`.

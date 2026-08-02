@@ -59,7 +59,7 @@ class CostBasisTests(unittest.TestCase):
 
 
 class OpenOfferContractTests(unittest.TestCase):
-    """Open offers must come from the enriched current-slot export."""
+    """Open offers must come from the reconciled RuneLite snapshot."""
 
     def test_plan_rejects_open_offer_without_limit_price(self) -> None:
         # Patch every data source: this must fail on the offer contract, not on
@@ -88,13 +88,30 @@ class OpenOfferContractTests(unittest.TestCase):
         err = io.StringIO()
         with (
             patch("flipper.runelite.read_open_offers",
-                  side_effect=RuntimeError("current GE slot export is stale")),
+                  side_effect=RuntimeError("RuneLite GE snapshot is missing")),
             redirect_stderr(err),
         ):
             code = plan._main(["--cash", "1000000"])
 
         self.assertEqual(code, 1)
-        self.assertEqual(err.getvalue(), "error: current GE slot export is stale\n")
+        self.assertEqual(err.getvalue(), "error: RuneLite GE snapshot is missing\n")
+
+    def test_intent_price_is_disclosed_as_provisional(self) -> None:
+        offer = {
+            "slot": 0, "id": 7, "side": "buy", "qty": 3, "filled_qty": 0,
+            "price": 100, "price_source": "intent", "intent_id": "pending",
+            "age_hours": 0.1, "last_fill_age_hours": None, "state": "ACTIVE",
+        }
+        with (
+            patch("flipper.plan.signals.item_signal", return_value={"signal": None}),
+            patch("flipper.plan.signals.live_quote", return_value={
+                "name": "item", "current_low": 90, "current_high": 110,
+            }),
+        ):
+            row = plan._triage_offer(offer)
+
+        self.assertTrue(row["price_is_provisional"])
+        self.assertIn("awaiting RuneLite confirmation", row["note"])
 
 
 
@@ -197,7 +214,7 @@ def _active_scan():
 class PlanTests(unittest.TestCase):
     def _plan(self, scan_sigs, *, cash=1_000_000, active=None, time_scan=None,
               item=lambda i: None,
-              quote=lambda i: None, cost_map=None, open_strategies=None, personal=None, **kw):
+              quote=lambda i: None, cost_map=None, personal=None, **kw):
         def evaluate(iid, **_kwargs):
             signal = item(iid)
             return {
@@ -219,7 +236,6 @@ class PlanTests(unittest.TestCase):
             patch("flipper.plan.signals.live_quote", side_effect=lambda iid: quote(iid)),
             patch("flipper.plan._cost_basis", return_value=cost_map or {}),
             patch("flipper.plan._personal_execution_stats", return_value=personal or {}),
-            patch("flipper.plan._open_strategy_by_item", return_value=open_strategies or {}),
         ):
             return plan.plan(cash=cash, **kw)
 
@@ -403,10 +419,10 @@ class PlanTests(unittest.TestCase):
 
         p = self._plan([], active=active_scan)
 
-        # A 1m bankroll permits ACTIVE_MAX_LANE_DOWNSIDE_PCT of immediate downside. At 25k of
+        # A 1m bankroll permits ACTIVE_MAX_STRATEGY_DOWNSIDE_PCT of immediate downside. At 25k of
         # forced-exit loss per unit that buys two units, well under what cash and flow allow, so
         # the downside cap is demonstrably the binding constraint rather than affordability.
-        budget = int(1_000_000 * plan.ACTIVE_MAX_LANE_DOWNSIDE_PCT)
+        budget = int(1_000_000 * plan.ACTIVE_MAX_STRATEGY_DOWNSIDE_PCT)
         self.assertEqual(p["active_buys"][0]["qty"], budget // 25_000)
         self.assertLess(budget // 25_000, 1_000_000 // 100_000)
 
@@ -425,7 +441,7 @@ class PlanTests(unittest.TestCase):
                 "high_vol_1h": 100, "low_vol_1h": 100,
             }
 
-        # The best-ranked candidate consumes the whole lane risk budget; the runner-up must not
+        # The best-ranked candidate consumes the whole strategy risk budget; the runner-up must not
         # open a second position risking another full budget's worth of the bank.
         p = self._plan(
             [],
@@ -486,7 +502,6 @@ class PlanTests(unittest.TestCase):
         p = self._plan([], item=lambda i: _sig(i, 100, fillable=20), personal=personal)
 
         self.assertEqual(p["buys"][0]["id"], 99)
-        self.assertEqual(p["buys"][0]["confidence"], 0.65)
         self.assertIn("personal staple", p["buys"][0]["reason"])
 
     def test_personal_best_flip_diagnostic_is_retained_but_rendered_only_on_request(self) -> None:
@@ -711,7 +726,6 @@ class PlanTests(unittest.TestCase):
             }),
             patch("flipper.plan._cost_basis", return_value={}),
             patch("flipper.plan._personal_execution_stats", return_value={}) as personal_stats,
-            patch("flipper.plan._open_strategy_by_item", return_value={}),
         ):
             plan.plan(cash=1_000_000, horizon="overnight")
 
@@ -750,17 +764,22 @@ class PlanTests(unittest.TestCase):
         )
 
         self.assertEqual(row["verdict"], "hold")
-        self.assertIn("no FU strategy tag", row["note"])
+        self.assertIn("no matched strategy intent", row["note"])
 
     def test_partially_filled_active_buy_cancels_only_the_remainder(self) -> None:
         offer = {"id": 7, "side": "buy", "qty": 2, "filled_qty": 1,
-                 "price": 100, "age_hours": 0.5, "state": "ACTIVE"}
-        row = plan._decide_triage(
-            offer, None, {"id": 7, "name": "gear"}, strategy="active-margin"
-        )
+                 "price": 100, "age_hours": 0.5, "state": "ACTIVE",
+                 "strategy": "active-margin"}
+        with (
+            patch("flipper.plan.signals.item_signal", return_value={"signal": None}),
+            patch("flipper.plan.signals.live_quote", return_value={
+                "id": 7, "name": "gear", "current_high": 110,
+            }),
+        ):
+            row = plan._triage_offer(offer)
         self.assertEqual(row["verdict"], "cancel")
         self.assertIn("cancel unfilled remainder", row["note"])
-        self.assertIn("collect 1 filled", row["note"])
+        self.assertIn("sell the 1 filled", row["note"])
 
     def test_active_sell_hard_exits_after_ninety_minutes(self) -> None:
         offer = {"id": 7, "side": "sell", "qty": 1, "filled_qty": 0,
@@ -784,22 +803,6 @@ class PlanTests(unittest.TestCase):
         )
         self.assertEqual(row["verdict"], "reprice")
         self.assertEqual(row["new_price"], 180)
-
-    def test_open_strategy_comes_from_fu_slot_tag(self) -> None:
-        offer = {
-            "slot": 3,
-            "id": 7,
-            "side": "buy",
-            "qty": 10,
-            "price": 80,
-            "strategy": "patient-band",
-            "hard_exit_at": "2026-06-25T22:00:00Z",
-        }
-
-        strategies = plan._open_strategy_by_item([offer])
-
-        self.assertEqual(strategies[3]["strategy"], "patient-band")
-        self.assertEqual(strategies[3]["hard_exit_at"], "2026-06-25T22:00:00Z")
 
     def test_time_of_day_buy_cancels_after_its_entry_window(self) -> None:
         offer = {"id": 7, "side": "buy", "qty": 100, "filled_qty": 0,
@@ -898,9 +901,9 @@ class PlanTests(unittest.TestCase):
 
         self.assertEqual(p["offer_triage"][0]["verdict"], "cancel")
         self.assertEqual(p["projection"]["released_buy_gp"], 1_000)
-        self.assertEqual(p["buys"][0]["qty"], 10_000)
+        self.assertEqual(p["buys"][0]["qty"], 10_010)
         self.assertEqual(p["slots"]["new_buys"], 1)
-        self.assertEqual(p["deployment"]["run_budget_gp"], 1_000_000)
+        self.assertEqual(p["deployment"]["run_budget_gp"], 1_001_000)
         self.assertIn("slots 1+7 used / 8", plan._render_md(p))
         self.assertIn("1,000gp buy escrow refunded", plan._render_md(p))
 
@@ -947,7 +950,7 @@ class PlanTests(unittest.TestCase):
 
     def test_sell_fill_keeps_the_strategys_absolute_hard_exit(self) -> None:
         # A time-of-day buy carries an absolute deadline. Converting the filled units into a
-        # sell must not restart the clock: dropping it let a lane that hard-exits at 24h run
+        # sell must not restart the clock: dropping it let a strategy that hard-exits at 24h run
         # a further 24h from sell placement.
         # Derived, not a literal: a hardcoded date puts the deadline in the past once the
         # wall clock passes it, silently flipping this test onto the overdue branch it is
@@ -963,12 +966,12 @@ class PlanTests(unittest.TestCase):
 
         sell = p["sell_fills"][0]
         self.assertEqual(sell["hard_exit_at"], deadline)
-        self.assertEqual(sell["predicted"]["by"], deadline)
+        self.assertEqual(sell["deadline"], deadline)
 
     def test_sell_fill_clears_at_market_when_the_hard_exit_already_passed(self) -> None:
         # Carrying the deadline forward is not enough on its own: a deadline in the past is an
-        # instruction to clear now. Posting the 200 band target with a due-in-the-past
-        # prediction would be an order that can never fill and a lie about when it will.
+        # instruction to clear now. Posting the 200 band target against a deadline in the past
+        # would be an order that can never fill.
         sig = {**_sig(1, 100, entry_price=100, exit_price=200), "ready_to_buy": False,
                "current_high": 90}
         offers = [{"id": 1, "side": "buy", "qty": 10, "filled_qty": 4, "price": 100,
@@ -981,7 +984,7 @@ class PlanTests(unittest.TestCase):
         # The deadline stays attached. Dropping it would let the next run fall back to
         # "24h from sell placement" — the very clock this fix exists to stop restarting.
         self.assertEqual(sell["hard_exit_at"], "2020-01-01T00:00+00:00")
-        by = datetime.fromisoformat(sell["predicted"]["by"])
+        by = datetime.fromisoformat(sell["deadline"])
         self.assertLess(abs((by - datetime.now(timezone.utc)).total_seconds()), 120)
 
     def test_thin_patient_candidates_rank_below_liquid_ones(self) -> None:
@@ -1013,7 +1016,7 @@ class PlanTests(unittest.TestCase):
 
     def test_patient_probe_is_not_cancelled_for_waiting_below_live_low(self) -> None:
         offers = [{"id": 1, "side": "buy", "qty": 10, "filled_qty": 0,
-                   "price": 100, "age_hours": 1}]
+                   "price": 100, "age_hours": 1, "strategy": "patient-probe"}]
         sig = {
             **_sig(1, 100),
             "ready_to_buy": False,
@@ -1021,10 +1024,7 @@ class PlanTests(unittest.TestCase):
             "distance_to_buy_pct": 2.0,
             "current_low": 102,
         }
-        row = self._plan(
-            [], item=lambda i: sig, offers=offers,
-            open_strategies={1: {"strategy": "patient-probe"}},
-        )["offer_triage"][0]
+        row = self._plan([], item=lambda i: sig, offers=offers)["offer_triage"][0]
         self.assertEqual(row["verdict"], "hold")
         self.assertIn("never reprice upward", row["note"])
 
@@ -1048,7 +1048,7 @@ class PlanTests(unittest.TestCase):
         item = lambda i: _sig(i, 100, entry_price=100, exit_price=200)
         offers = [
             {"id": 1, "side": "buy", "qty": 1984, "filled_qty": 1984,
-             "price": 8508, "state": "FILLED"},
+             "price": 100, "state": "FILLED"},
             {"id": 2, "side": "sell", "qty": 100, "filled_qty": 20,
              "price": 200, "state": "CANCELLED"},
         ]
@@ -1059,8 +1059,11 @@ class PlanTests(unittest.TestCase):
         self.assertIn("cancelled but uncollected", p["offer_triage"][1]["note"])
         self.assertEqual(p["sell_fills"][0]["qty"], 1984)
         self.assertEqual(p["sell_fills"][0]["price"], 200)
+        self.assertEqual(p["sell_fills"][1]["qty"], 80)
+        self.assertIn("relist 80 returned unit", p["sell_fills"][1]["reason"])
         self.assertEqual(p["slots"]["retained_open_offers"], 0)
-        self.assertIn("slots 1+0 used / 8", plan._render_md(p))
+        self.assertEqual(p["slots"]["free"], 6)
+        self.assertIn("slots 2+0 used / 8", plan._render_md(p))
 
     def test_markdown_uses_one_stable_action_table(self) -> None:
         p = self._plan([_sig(1, 100, entry_price=100, exit_price=200, fillable=10)])
@@ -1249,7 +1252,7 @@ class PlanTests(unittest.TestCase):
             _sig(1, 100, entry_price=100, fillable=20_000, ge_limit=20_000),
         ])
 
-        self.assertEqual(p["inputs"]["liquid_gp"], 1_000_000)
+        self.assertEqual(p["inputs"]["deployable_gp"], 1_000_000)
         self.assertEqual(p["buys"][0]["qty"], 10_000)
         self.assertEqual(p["deployment"]["planned_gp"], 1_000_000)
         self.assertEqual(p["deployment"]["utilization_pct"], 100.0)
@@ -1278,9 +1281,7 @@ class PlanTests(unittest.TestCase):
         self.assertEqual(p["deployment"]["held_buy_gp"], 2_000_000)
         self.assertIn("2,000,000gp already escrowed in held buys", plan._render_md(p))
 
-    def test_collected_sell_proceeds_require_a_larger_cash_authorization_to_redeploy(self) -> None:
-        # A filled-but-uncollected sell releases after-tax proceeds, but --cash remains
-        # the complete authorization for this run's new buys.
+    def test_collected_sell_proceeds_are_redeployed(self) -> None:
         filled_sell = {"id": 5, "side": "sell", "qty": 10, "filled_qty": 10,
                        "price": 1_000, "state": "FILLED"}
         p = self._plan(
@@ -1289,13 +1290,13 @@ class PlanTests(unittest.TestCase):
         )
 
         self.assertEqual(p["projection"]["released_sell_gp"], 9_800)  # 10 * (1000 - 2% tax)
-        self.assertEqual(p["deployment"]["run_budget_gp"], 1_000_000)
-        self.assertEqual(p["buys"][0]["qty"], 10_000)
+        self.assertEqual(p["deployment"]["run_budget_gp"], 1_009_800)
+        self.assertEqual(p["buys"][0]["qty"], 10_098)
         self.assertEqual(p["deployment"]["utilization_pct"], 100.0)
         md = plan._render_md(p)
         self.assertIn("slots 1+0 used / 8", md)
         self.assertIn("9,800gp sale proceeds collected", md)
-        self.assertIn("not redeployed; rerun with higher --cash", md)
+        self.assertIn("included in deployable GP", md)
 
     def test_cash_is_required(self) -> None:
         with self.assertRaisesRegex(ValueError, "cash is required"):
@@ -1323,7 +1324,6 @@ class DeploymentConstraintTests(unittest.TestCase):
             patch("flipper.plan.signals.live_quote", return_value=None),
             patch("flipper.plan._cost_basis", return_value={}),
             patch("flipper.plan._personal_execution_stats", return_value={}),
-            patch("flipper.plan._open_strategy_by_item", return_value={}),
         ):
             return plan.plan(**kw)
 
@@ -1360,7 +1360,7 @@ class DeploymentConstraintTests(unittest.TestCase):
 class BankrollMonotonicityTests(unittest.TestCase):
     """More gold must never produce a worse recommendation.
 
-    Cash, slots and the shared lane risk budget all widen with liquid gp, so the plan available at
+    Cash, slots and the shared strategy risk budget all widen with deployable gp, so the plan available at
     any bankroll is available at every larger one. Expected profit therefore has to be
     non-decreasing in liquid, and deployment must never shrink.
 
@@ -1411,7 +1411,6 @@ class BankrollMonotonicityTests(unittest.TestCase):
                   return_value={"candidates": [], "rejected": []}),
             patch("flipper.plan._cost_basis", return_value={}),
             patch("flipper.plan._personal_execution_stats", return_value={}),
-            patch("flipper.plan._open_strategy_by_item", return_value={}),
         ):
             return plan.plan(cash=cash, max_new_slots=8)
 
@@ -1462,8 +1461,12 @@ class PartiallyFilledStaleBuyTests(unittest.TestCase):
                 "last_fill_age_hours": last_fill_age_hours}
 
     def test_partly_filled_buy_that_stopped_filling_is_cancelled(self) -> None:
-        res = plan._decide_triage(
-            self._buy(filled_qty=2, last_fill_age_hours=4.5), self._sig(), self._sig())
+        with patch.object(signals, "item_signal", return_value={
+            "signal": self._sig(), "blocked_by": None,
+        }):
+            res = plan._triage_offer(
+                self._buy(filled_qty=2, last_fill_age_hours=4.5)
+            )
         self.assertEqual(res["verdict"], "cancel")
         self.assertIn("sell the 2 filled unit(s)", res["note"])
 
@@ -1472,13 +1475,62 @@ class PartiallyFilledStaleBuyTests(unittest.TestCase):
             self._buy(filled_qty=2, last_fill_age_hours=0.6), self._sig(), self._sig())
         self.assertEqual(res["verdict"], "hold")
 
+    def test_partly_filled_buy_that_needs_repricing_cancels_and_sells(self) -> None:
+        offer = {**self._buy(filled_qty=2, last_fill_age_hours=0.1), "price": 1_500_000}
+        with patch.object(signals, "item_signal", return_value={
+            "signal": self._sig(), "blocked_by": None,
+        }):
+            row = plan._triage_offer(offer)
+
+        self.assertEqual(row["verdict"], "cancel")
+        self.assertNotIn("new_price", row)
+        self.assertIn("cannot be repriced in place", row["note"])
+
+    def test_sell_fill_uses_live_bid_when_target_is_not_executable(self) -> None:
+        offer = self._buy(filled_qty=2, last_fill_age_hours=4.5)
+        sig = {**self._sig(), "exit_price": 1_500_000, "current_high": 1_434_044}
+        with patch.object(signals, "item_signal", return_value={
+            "signal": sig, "blocked_by": None,
+        }):
+            row = plan._sell_fill_row(offer, "Black mask (10)", "sell filled units")
+
+        self.assertEqual(row["price"], 1_434_044)
+
     def test_cancelled_partial_buy_produces_a_sell_row_for_the_filled_units(self) -> None:
         offer = self._buy(filled_qty=2, last_fill_age_hours=4.5)
         triage = {"verdict": "cancel", "name": "Black mask (10)"}
         with patch.object(signals, "item_signal", return_value={
             "signal": self._sig(), "blocked_by": None,
         }):
-            row = plan._sell_fill_row(offer, triage)
+            row = plan._sell_fill_row(
+                offer,
+                triage["name"],
+                "sell filled units after cancelling the buy remainder",
+            )
         self.assertIsNotNone(row)
         self.assertEqual(row["qty"], 2)
         self.assertEqual(row["price"], 1_434_044)
+
+    def test_recovered_buy_reserves_a_slot_and_becomes_a_sell(self) -> None:
+        recovered = [{
+            "id": 8901,
+            "side": "buy",
+            "qty": 2,
+            "filled_qty": 2,
+            "price": 1_365_002,
+            "intent_id": "tracked",
+            "strategy": "patient-band",
+        }]
+
+        with (
+            patch("flipper.plan.signals.item_signal", return_value={
+                "signal": self._sig(), "blocked_by": None,
+            }),
+            patch("flipper.plan._cost_basis", return_value={}),
+            patch("flipper.plan._personal_execution_stats", return_value={}),
+        ):
+            p = plan.plan(cash=0, recovered_buys=recovered, strategies="none")
+
+        self.assertEqual(p["sell_fills"][0]["qty"], 2)
+        self.assertEqual(p["sell_fills"][0]["strategy"], "patient-band")
+        self.assertEqual(p["slots"]["free"], 7)

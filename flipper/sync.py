@@ -1,11 +1,11 @@
-"""Mirror RuneLite's Flipping Utilities exports into the local repo."""
+"""Snapshot RuneLite's local GE state and optional Flipping Utilities history."""
 
 from __future__ import annotations
 
 import argparse
-import fnmatch
+import json
 import os
-import shutil
+import re
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -14,40 +14,100 @@ from .config import ROOT
 
 
 FLIPPING_EXCLUDES = ("*.backup.json", "backupCheckpoints*.json", "accountwide.json")
+PROFILE_RE = re.compile(r"^rsprofile\.rsprofile\.([^.]+)\.(displayName|type)$")
+OFFER_RE = re.compile(r"^geoffer\.rsprofile\.([^.]+)\.(\d+)$")
+TRADE_RE = re.compile(r"^grandexchange\.rsprofile\.([^.]+)\.tradeHistory$")
+SELECTED_PROFILE_RE = re.compile(
+    r"choosing RuneScapeProfile\([^)]*key=rsprofile\.([^)]+)\)"
+)
 
 
 def _runelite_home() -> Path:
     return Path(os.environ.get("RUNELITE_HOME", "~/.runelite")).expanduser()
 
 
-def _excluded(relative: Path) -> bool:
-    return (
-        "current-slots" in relative.parts
-        or any(fnmatch.fnmatch(relative.name, pattern) for pattern in FLIPPING_EXCLUDES)
+def _property_value(value: str) -> str:
+    """Decode the subset of Java-properties escapes RuneLite uses in these values."""
+    return re.sub(
+        r"\\u([0-9a-fA-F]{4})|\\(.)",
+        lambda match: chr(int(match.group(1), 16)) if match.group(1) else match.group(2),
+        value,
     )
 
 
-def _mirror(source: Path, destination: Path, *, exclude_flipping_noise: bool = False) -> int:
-    """Copy source files and remove destination files no longer present in the mirror."""
+def _selected_profile(runelite_home: Path) -> str | None:
+    try:
+        text = (runelite_home / "logs/client.log").read_text(errors="replace")
+    except FileNotFoundError:
+        return None
+    matches = SELECTED_PROFILE_RE.findall(text)
+    return matches[-1] if matches else None
+
+
+def _profile(profiles: dict[str, dict], key: str, modified_at: str) -> dict:
+    profile = profiles.setdefault(key, {"offers": {}, "tradeHistory": []})
+    profile["modifiedAt"] = modified_at
+    return profile
+
+
+def _snapshot_profiles(runelite_home: Path, destination: Path) -> int:
+    profiles: dict[str, dict] = {}
+    for path in sorted((runelite_home / "profiles2").glob("*.properties")):
+        modified_at = datetime.fromtimestamp(
+            path.stat().st_mtime, tz=timezone.utc
+        ).isoformat(timespec="seconds")
+        for line in path.read_text(errors="replace").splitlines():
+            if not line or line[0] in "#!" or "=" not in line:
+                continue
+            key, encoded = line.split("=", 1)
+            value = _property_value(encoded)
+            match = PROFILE_RE.match(key)
+            if match:
+                profile = _profile(profiles, match.group(1), modified_at)
+                profile[match.group(2)] = value
+                continue
+            match = OFFER_RE.match(key)
+            if match:
+                profile = _profile(profiles, match.group(1), modified_at)
+                profile["offers"][match.group(2)] = json.loads(value)
+                continue
+            match = TRADE_RE.match(key)
+            if match:
+                profile = _profile(profiles, match.group(1), modified_at)
+                profile["tradeHistory"] = json.loads(value)
+
     destination.mkdir(parents=True, exist_ok=True)
-    wanted: set[Path] = set()
+    output = destination / "profiles.json"
+    for stale in destination.glob("*.json"):
+        if stale != output:
+            stale.unlink()
+    tmp = output.with_suffix(".tmp")
+    tmp.write_text(json.dumps({
+        "generatedAt": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "selectedProfile": _selected_profile(runelite_home),
+        "profiles": [{"key": key, **profile} for key, profile in sorted(profiles.items())],
+    }, indent=2))
+    tmp.replace(output)
+    return len(profiles)
 
-    for path in source.rglob("*"):
-        if not path.is_file():
-            continue
-        relative = path.relative_to(source)
-        if exclude_flipping_noise and _excluded(relative):
-            continue
-        wanted.add(relative)
-        target = destination / relative
-        target.parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(path, target)
 
-    for path in sorted(destination.rglob("*"), reverse=True):
-        if path.is_file() and path.relative_to(destination) not in wanted:
+def _mirror_flipping(source: Path, destination: Path) -> int:
+    """Mirror stock Flipping Utilities' account JSON files."""
+    destination.mkdir(parents=True, exist_ok=True)
+    wanted: set[str] = set()
+
+    for path in source.glob("*.json"):
+        if any(path.match(pattern) for pattern in FLIPPING_EXCLUDES):
+            continue
+        wanted.add(path.name)
+        target = destination / path.name
+        tmp = target.with_suffix(".tmp")
+        tmp.write_text(path.read_text(errors="replace"))
+        tmp.replace(target)
+
+    for path in destination.glob("*.json"):
+        if path.name not in wanted:
             path.unlink()
-        elif path.is_dir() and not any(path.iterdir()):
-            path.rmdir()
 
     return len(wanted)
 
@@ -56,15 +116,10 @@ def sync_exports(*, runelite_home: Path | None = None, root: Path = ROOT) -> dic
     runelite_home = (runelite_home or _runelite_home()).expanduser()
     flipping_source = runelite_home / "flipping"
     flipping_destination = root / "data/incoming/flipping"
-    slots_source = flipping_source / "current-slots"
-    slots_destination = root / "data/incoming/ge-slots"
+    runelite_destination = root / "data/incoming/runelite"
 
     if flipping_source.is_dir():
-        flipping_count = _mirror(
-            flipping_source,
-            flipping_destination,
-            exclude_flipping_noise=True,
-        )
+        flipping_count = _mirror_flipping(flipping_source, flipping_destination)
         flipping_status = "synced"
     else:
         # Flip history remains useful when RuneLite is temporarily unavailable.
@@ -72,24 +127,23 @@ def sync_exports(*, runelite_home: Path | None = None, root: Path = ROOT) -> dic
         flipping_count = 0
         flipping_status = "source missing; existing history preserved"
 
-    if slots_source.is_dir():
-        slots_count = _mirror(slots_source, slots_destination)
-        slots_status = "synced"
+    if (runelite_home / "profiles2").is_dir():
+        profile_count = _snapshot_profiles(runelite_home, runelite_destination)
+        profile_status = "synced"
     else:
-        # Never let a missing live export leave actionable stale offers behind.
-        slots_destination.mkdir(parents=True, exist_ok=True)
-        for path in slots_destination.glob("*.json"):
+        runelite_destination.mkdir(parents=True, exist_ok=True)
+        for path in runelite_destination.glob("*.json"):
             path.unlink()
-        slots_count = 0
-        slots_status = "source missing; stale slots cleared"
+        profile_count = 0
+        profile_status = "source missing; stale snapshot cleared"
 
     return {
         "runelite_home": runelite_home,
         "root": root,
         "flipping_count": flipping_count,
         "flipping_status": flipping_status,
-        "slots_count": slots_count,
-        "slots_status": slots_status,
+        "profile_count": profile_count,
+        "profile_status": profile_status,
     }
 
 
@@ -107,7 +161,7 @@ def _main(argv: list[str]) -> int:
     print(f"runelite-sync {generated_at}")
     print(f"source {result['runelite_home']}")
     print(f"flipping {result['flipping_count']} file(s), {result['flipping_status']}")
-    print(f"ge-slots {result['slots_count']} file(s), {result['slots_status']}")
+    print(f"runelite {result['profile_count']} profile(s), {result['profile_status']}")
     print(f"destination {result['root'] / 'data/incoming'}")
     return 0
 

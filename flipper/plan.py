@@ -1,6 +1,6 @@
 """Deterministic planner: turn signals + budget + your open offers into a final instruction
-table. **Zero LLM tokens** — selection, the survival gate, offer triage, sizing, reasons and
-predictions are all mechanical. The only LLM step in a session is `flipper.research`, which produces
+table. **Zero LLM tokens** — selection, the survival gate, offer triage, sizing, and reasons are
+all mechanical. The only LLM step in a session is `flipper.research`, which produces
 a small boost/avoid overlay that this planner consumes; see AGENTS.md.
 
 Pipeline:
@@ -24,7 +24,6 @@ import json
 import sys
 from collections import Counter
 from datetime import datetime, timedelta, timezone
-from typing import Mapping
 
 from . import execution_stats, ge_tax, runelite, signals
 
@@ -55,7 +54,7 @@ MIN_RETURN_PER_CAPITAL_HOUR = 0.0005  # a slot must also return >= 0.05%/hour on
                                       # opportunity cost of capital a later run could deploy
                                       # into a better entry. Charged on expected fills, not
                                       # posted quantity: unfilled buy escrow refunds at the
-                                      # lane's zero-fill cancel and is redeployable anytime.
+                                      # strategy's zero-fill cancel and is redeployable anytime.
                                       # Kills e.g. 12k expected on 1.45m held up to 24h while
                                       # leaving cheap residual mop-up buys (tiny capital) alive.
 PATIENT_MIN_NET_MARGIN_GP = 10  # a patient flip's after-tax per-unit spread must clear this many
@@ -64,19 +63,16 @@ PATIENT_MIN_NET_MARGIN_GP = 10  # a patient flip's after-tax per-unit spread mus
                                 # phantom. Absolute coins only — low ROI with decent coins is fine.
 ACTIVE_HORIZON_MINUTES = 90
 ACTIVE_CANCEL_MINUTES = 30
-ACTIVE_MAX_LANE_DOWNSIDE_PCT = 0.05  # the whole active lane's replayed forced-exit downside must
-                                     # fit inside this fraction of liquid, shared across every
-                                     # active slot the run opens rather than allowed per position,
-                                     # so eight positions cannot each risk the per-position limit.
-                                     # At 0.01 the budget bound at every bankroll and the greedy
-                                     # allocator spent ~99% of it on the first one or two picks,
-                                     # starving the rest: deployment sat near 50% at every bank
-                                     # size and six of eight bankrolls chose a plan worse than one
-                                     # the planner itself produced at a different bankroll.
+# The active strategy's total replayed forced-exit downside must fit inside this fraction of liquid
+# across every active slot, rather than being allowed per position. At 0.01 the budget bound at
+# every bankroll and the greedy allocator spent ~99% of it on the first one or two picks, starving
+# the rest: deployment sat near 50% at every bank size and six of eight bankrolls chose a plan worse
+# than one the planner itself produced at another bankroll.
+ACTIVE_MAX_STRATEGY_DOWNSIDE_PCT = 0.05
 # Per-position caps on what a replayed forced exit may cost, as a fraction of liquid. Relative, so
-# they mean the same thing to a 5m and a 1b bankroll. Unlike the active lane these are per position
-# rather than a shared budget, because a band lane's forced exit is a fraction of the spread rather
-# than the whole of it.
+# they mean the same thing to a 5m and a 1b bankroll. Unlike the active strategy these are per
+# position rather than a shared budget, because a band strategy's forced exit is a fraction of the
+# spread rather than the whole of it.
 # NOTE: the patient cap is 3.3x tighter than the time-of-day one despite the shorter hold. That
 # asymmetry has never been justified by a measurement and is worth revisiting.
 TIME_MAX_POSITION_DOWNSIDE_PCT = 0.01
@@ -164,9 +160,7 @@ def _buy_row(sig: dict, band_evidence: dict, qty: int, expected_profit: int,
                    f"(+{band_evidence['total_profit_gp']:,}gp/block over {band_evidence['trades']} blocks); "
                    f"fillable ~{sig['fillable_qty']}/{int(sig['fill_window_hours'])}h"
                    f"{personal}{staple_note}"),
-        "predicted": {"direction": "up", "target": sig["exit_price"],
-                      "by": _by_hours()},
-        "confidence": 0.65 if staple and staple.get("staple") else 0.60,
+        "deadline": _by_hours(),
         "strategy": "patient-band",
         "expected_profit": expected_profit,
         **({"staple_evidence": staple} if staple and staple.get("staple") else {}),
@@ -255,11 +249,7 @@ def _time_buy_row(sig: dict, qty: int, expected_profit: int) -> dict:
             "sized to expected fills and GE limit, cancel zero-fill after "
             f"{TIME_OF_DAY_BUY_CANCEL_HOURS}h"
         ),
-        "predicted": {
-            "direction": "up",
-            "target": sig["exit_price"],
-            "by": _by_hours(sig["hold_hours"]),
-        },
+        "deadline": _by_hours(sig["hold_hours"]),
         "hard_exit_at": _by_hours(24),
         "expected_profit": expected_profit,
         "pattern_evidence": {
@@ -295,33 +285,31 @@ def _active_buy_row(sig: dict, qty: int, expected_profit: int) -> dict:
             f"cancel unfilled after {ACTIVE_CANCEL_MINUTES}m, hard exit by "
             f"{ACTIVE_HORIZON_MINUTES}m"
         ),
-        "predicted": {
-            "direction": "up",
-            "target": sig["exit_price"],
-            "by": _by_hours(ACTIVE_HORIZON_MINUTES / 60),
-        },
-        "confidence": 0.45 if sig.get("short_drift_pct") is None else 0.55,
+        "deadline": _by_hours(ACTIVE_HORIZON_MINUTES / 60),
         "strategy": "active-margin",
         "expected_profit": expected_profit,
     }
 
 
-def _sell_fill_row(offer: dict, triage: dict) -> dict | None:
-    if offer.get("side") != "buy" or triage.get("verdict") not in {"cancel", "collect"}:
-        return None
+def _sell_fill_row(offer: dict, name: str | None, reason: str) -> dict | None:
     qty = int(_num(offer.get("filled_qty")))
     if qty <= 0:
         return None
     market = signals.item_signal(offer["id"])["signal"] or signals.live_quote(offer["id"])
-    price = (market or {}).get("exit_price") or _sane_bid(market)
+    target = (market or {}).get("exit_price")
+    bid = _sane_bid(market)
+    price = min(target, bid) if target and bid else target or bid
     if not price:
         raise ValueError(f"cannot price filled buy for resale: {offer}")
-    reason = f"sell {qty} filled unit(s) after {triage['verdict']}ing the buy offer"
+    break_even = _break_even(int(_num(offer.get("price"))))
+    if price < break_even and not _deadline_due(offer.get("hard_exit_at")):
+        price = break_even
+        reason += f" — list at break-even {break_even}; live bid {bid} would realize a loss"
     if not offer.get("intent_id") and not offer.get("strategy"):
-        reason += " — untracked buy, resale will not be strategy-graded"
+        reason += " — untracked buy, resale has no retained strategy context"
     # A strategy's hard exit is an absolute instant, not a per-offer stopwatch. Dropping it
     # restarted the clock at sell placement, so a time-of-day buy filled late in its entry
-    # window could run a further 24h against a lane that hard-exits at 24h. A deadline that
+    # window could run a further 24h against a strategy that hard-exits at 24h. A deadline that
     # has already passed is an instruction to clear now, not a target to post and wait on:
     # carrying it forward without acting would emit a sell at the band price due in the past.
     hard_exit_at = offer.get("hard_exit_at")
@@ -330,11 +318,11 @@ def _sell_fill_row(offer: dict, triage: dict) -> dict | None:
         # Clear now rather than posting the band target against a deadline in the past. The
         # deadline stays attached: if this clear does not fill, the next run must still see
         # the offer as overdue rather than restarting a 24h clock from sell placement.
-        price = _clear_price(price, _sane_bid(market)) or price
+        price = _clear_price(price, bid) or price
         reason += f" — hard exit {hard_exit_at} has passed, clear at market {price}"
     return {
         "id": offer["id"],
-        "name": triage.get("name") or (market or {}).get("name"),
+        "name": name or (market or {}).get("name"),
         "action": "sell",
         "bucket": "sell-fill",
         "strategy": offer.get("strategy") or "sell-fill",
@@ -345,14 +333,9 @@ def _sell_fill_row(offer: dict, triage: dict) -> dict | None:
         "live_high": (market or {}).get("current_high"),
         "horizon": "0-12h",
         "reason": reason,
-        "predicted": {
-            "direction": "up", "target": price,
-            # Overdue means execute now, so the prediction says now — not a stale instant in
-            # the past, and not a fresh 12h window the strategy never granted.
-            "by": _by_hours(0) if overdue else (hard_exit_at or _by_hours()),
-        },
+        # Overdue means execute now, not under a fresh 12h window the strategy never granted.
+        "deadline": _by_hours(0) if overdue else (hard_exit_at or _by_hours()),
         **({"hard_exit_at": hard_exit_at} if hard_exit_at else {}),
-        "confidence": 0.40,
     }
 
 
@@ -374,15 +357,40 @@ def _project_after_triage(offers: list[dict], triage: list[dict], budget: int) -
                 released_buy_gp += unfilled_gp
             elif offer.get("side") == "sell" and filled > 0:
                 # Filled-but-uncollected sell proceeds become cash the moment the
-                # plan's own collect/cancel instruction is executed. Record them for
-                # the user without silently expanding this run's authorized budget.
+                # plan's own collect/cancel instruction is executed.
                 released_sell_gp += ge_tax.net_sale_price(
                     offer["id"], row.get("name") or "", price
                 ) * filled
-            sell = _sell_fill_row(offer, row)
+            sell = None
+            if offer.get("side") == "buy" and filled > 0:
+                sell = _sell_fill_row(
+                    offer,
+                    row.get("name"),
+                    f"sell {filled} filled unit(s) after cancelling the buy remainder",
+                )
             if sell:
                 sell_fills.append(sell)
                 # Replacing the released buy with a sell consumes the same GE slot.
+                free_slots -= 1
+            returned_qty = int(_num(row.get("returned_qty")))
+            relist_price = int(_num(row.get("relist_price")))
+            if returned_qty > 0 and relist_price > 0:
+                sell_fills.append({
+                    "id": offer["id"],
+                    "name": row.get("name"),
+                    "action": "sell",
+                    "bucket": "sell-return",
+                    "strategy": offer.get("strategy"),
+                    "qty": returned_qty,
+                    "price": relist_price,
+                    "sell_target": relist_price,
+                    "live_low": row.get("live_low"),
+                    "live_high": row.get("live_high"),
+                    "horizon": "0-12h",
+                    "deadline": offer.get("hard_exit_at") or _by_hours(),
+                    "hard_exit_at": offer.get("hard_exit_at"),
+                    "reason": row["relist_reason"],
+                })
                 free_slots -= 1
             continue
 
@@ -392,10 +400,7 @@ def _project_after_triage(offers: list[dict], triage: list[dict], budget: int) -
 
     return {
         "free_slots": max(0, free_slots),
-        # --cash is the complete amount authorized for new buys this run. Refunds and
-        # sale proceeds are reported below, but require a rerun with a larger --cash
-        # before the planner may redeploy them.
-        "budget_left": budget,
+        "budget_left": budget + released_buy_gp + released_sell_gp,
         "released_buy_gp": released_buy_gp,
         "released_sell_gp": released_sell_gp,
         "locked_buy_gp": locked_buy_gp,
@@ -451,7 +456,11 @@ def _action_rows(p: dict) -> list[dict]:
     for b in p.get("sell_fills", []):
         add(
             strategy="sell-fill",
-            basis="sell fill, list filled units",
+            basis=(
+                "returned sell, relist unsold units"
+                if b.get("bucket") == "sell-return"
+                else "sell fill, list filled units"
+            ),
             action="sell",
             item=b.get("name"),
             side="sell",
@@ -462,7 +471,7 @@ def _action_rows(p: dict) -> list[dict]:
             live_low=b.get("live_low"),
             live_high=b.get("live_high"),
             sell_target=b.get("sell_target"),
-            deadline=b.get("predicted", {}).get("by", ""),
+            deadline=b.get("deadline", ""),
             reason=b.get("reason"),
         )
     for section, strategy in (
@@ -494,7 +503,7 @@ def _action_rows(p: dict) -> list[dict]:
                 live_low=b.get("live_low"),
                 live_high=b.get("live_high"),
                 sell_target=b.get("sell_target"),
-                deadline=b.get("hard_exit_at") or b.get("predicted", {}).get("by", ""),
+                deadline=b.get("hard_exit_at") or b.get("deadline", ""),
                 reason=b.get("reason"),
             )
     return rows
@@ -637,42 +646,76 @@ def _enforce_fillable(res: dict, sig: dict | None) -> dict:
     return res
 
 
-def _open_strategy_by_item(offers: list[dict]) -> dict[int, dict]:
-    """Strategy tags come from FU current-slot exports."""
-    strategies = {}
-    for offer in offers:
-        strategy = offer.get("strategy")
-        if strategy:
-            strategies[offer.get("slot", offer["id"])] = {
-                "strategy": strategy,
-                "hard_exit_at": offer.get("hard_exit_at"),
-            }
-    return strategies
-
-
-def _triage_offer(offer: dict, cost_map: dict[int, int] | None = None,
-                  strategy_by_item: Mapping[int, dict] | None = None) -> dict:
+def _triage_offer(offer: dict, cost_map: dict[int, int] | None = None) -> dict:
     """hold / reprice / cancel verdict for one open GE offer, vs the current band."""
     sig = signals.item_signal(offer["id"])["signal"]
     quote = sig or signals.live_quote(offer["id"])
     cost = (cost_map or {}).get(offer["id"])
-    strategy_context = (strategy_by_item or {}).get(offer.get("slot", offer["id"])) or {}
-    strategy = strategy_context.get("strategy")
-    hard_exit_due = _deadline_due(strategy_context.get("hard_exit_at"))
+    strategy = offer.get("strategy")
+    hard_exit_at = offer.get("hard_exit_at")
+    hard_exit_due = _deadline_due(hard_exit_at)
+    res = _decide_triage(
+        offer,
+        sig,
+        quote,
+        strategy=strategy,
+        hard_exit_at=hard_exit_at,
+    )
+    filled_qty = int(_num(offer.get("filled_qty")))
+    if offer.get("side") == "buy" and filled_qty > 0 and res.get("verdict") == "reprice":
+        res.pop("new_price", None)
+        res["verdict"] = "cancel"
+        res["note"] = (
+            f"{res.get('note')} — a partially filled GE buy cannot be repriced in place; "
+            f"cancel the remainder and sell the {filled_qty} filled unit(s)"
+        )
+    elif offer.get("side") == "buy" and filled_qty > 0 and res.get("verdict") == "cancel":
+        res["note"] = (
+            f"{res.get('note')} — cancel the unfilled remainder and sell the "
+            f"{filled_qty} filled unit(s)"
+        )
     res = _apply_cost_guard(
-        _decide_triage(
-            offer,
-            sig,
-            quote,
-            strategy=strategy,
-            hard_exit_at=strategy_context.get("hard_exit_at"),
-        ),
+        res,
         offer, quote, cost, strategy=strategy, hard_exit_due=hard_exit_due,
     )
     res = _enforce_fillable(res, quote)
+    state = str(offer.get("state") or "ACTIVE").upper()
+    returned_qty = int(_num(offer.get("qty"))) - filled_qty
+    if state == "CANCELLED" and offer.get("side") == "sell" and returned_qty > 0:
+        active_offer = {**offer, "state": "ACTIVE", "filled_qty": 0}
+        continuation = _decide_triage(
+            active_offer,
+            sig,
+            quote,
+            strategy=strategy,
+            hard_exit_at=hard_exit_at,
+        )
+        continuation = _apply_cost_guard(
+            continuation,
+            active_offer,
+            quote,
+            cost,
+            strategy=strategy,
+            hard_exit_due=hard_exit_due,
+        )
+        continuation = _enforce_fillable(continuation, quote)
+        if continuation["verdict"] in {"hold", "reprice"}:
+            relist_price = int(_num(continuation.get("new_price") or offer.get("price")))
+            res["returned_qty"] = returned_qty
+            res["relist_price"] = relist_price
+            res["relist_reason"] = (
+                f"relist {returned_qty} returned unit(s) after collecting the cancelled sell — "
+                f"{continuation['note']}"
+            )
+            res["note"] += f"; collect and relist {returned_qty} returned unit(s) at {relist_price}"
+        else:
+            res["note"] += (
+                f"; collect {returned_qty} returned unit(s), but do not relist — "
+                f"{continuation['note']}"
+            )
     # No live intent and no strategy tag: origin unknown — a manual offer, a call whose
     # intent was already reconciled, or one the harness failed to link. The advice applies
-    # either way; the tag only means the outcome will not be strategy-graded. Collect
+    # either way; the tag only records the offer's strategy context. Collect
     # stays unqualified because collecting is always correct.
     if not offer.get("intent_id") and not strategy and res.get("verdict") != "collect":
         res["untracked"] = True
@@ -686,6 +729,12 @@ def _triage_offer(offer: dict, cost_map: dict[int, int] | None = None,
         res["age_is_floor"] = True
         res["note"] = (f"{res.get('note') or ''} — age ≥{_num(offer.get('age_hours')):g}h "
                        f"(first observed then; placement time unknown)").lstrip(" —")
+    if offer.get("price_source") == "intent" and res.get("verdict") != "collect":
+        res["price_is_provisional"] = True
+        res["note"] = (
+            f"{res.get('note') or ''} — limit price from matched intent; "
+            "awaiting RuneLite confirmation"
+        ).lstrip(" —")
     return res
 
 
@@ -699,6 +748,8 @@ def _decide_triage(offer: dict, sig: dict | None, quote: dict | None,
             "age_hours": offer.get("age_hours"), "filled_qty": offer.get("filled_qty"),
             "last_fill_age_hours": offer.get("last_fill_age_hours"),
             "state": offer.get("state")}
+    if offer.get("price_source"):
+        base["price_source"] = offer["price_source"]
     state = str(offer.get("state") or "ACTIVE").upper()
     if state == "FILLED":
         return {**base, "verdict": "collect", "note": "filled but uncollected — collect to free the slot"}
@@ -721,12 +772,7 @@ def _decide_triage(offer: dict, sig: dict | None, quote: dict | None,
                 return {
                     **base,
                     "verdict": "cancel",
-                    "note": (
-                        f"{TIME_OF_DAY_BUY_CANCEL_HOURS}h UTC entry window expired"
-                        if filled_qty <= 0 else
-                        f"collect {int(filled_qty)} filled; cancel unfilled remainder after "
-                        f"{TIME_OF_DAY_BUY_CANCEL_HOURS}h UTC entry window"
-                    ),
+                    "note": f"{TIME_OF_DAY_BUY_CANCEL_HOURS}h UTC entry window expired",
                 }
             return {**base, "verdict": "hold",
                     "note": "inside scheduled UTC entry window; never reprice upward"}
@@ -740,13 +786,9 @@ def _decide_triage(offer: dict, sig: dict | None, quote: dict | None,
                     "note": f"scheduled time-of-day exit remains live until {hard_exit_at}"}
     if strategy == "active-margin" and side == "buy":
         if age_hours >= ACTIVE_CANCEL_MINUTES / 60:
-            fill_note = (
-                f"; collect {int(filled_qty)} filled unit(s) and place the sell on the next run"
-                if filled_qty > 0 else ""
-            )
             return {**base, "verdict": "cancel",
                     "note": (f"active probe {age_hours * 60:.0f}m old — cancel unfilled "
-                             f"remainder{fill_note}")}
+                             "remainder")}
         return {**base, "verdict": "hold",
                 "note": "active probe inside 30m entry window; never reprice upward"}
     if (
@@ -760,7 +802,7 @@ def _decide_triage(offer: dict, sig: dict | None, quote: dict | None,
             **base,
             "verdict": "hold",
             "note": (
-                "fresh high-value buy has no FU strategy tag; preserve it through "
+                "fresh high-value buy has no matched strategy intent; preserve it through "
                 "the 30m active entry window instead of applying patient-band cancellation"
             ),
         }
@@ -805,10 +847,7 @@ def _decide_triage(offer: dict, sig: dict | None, quote: dict | None,
     # fill instead of stranding it inside an offer that will never complete.
     if side == "buy" and age_known and idle_hours >= STALE_BUY_HOURS:
         return {**base, "verdict": "cancel",
-                "note": (f"stale {age_hours:g}h with no fills — entry window expired"
-                         if filled_qty <= 0 else
-                         f"no fills for {idle_hours:g}h — cancel the unfilled remainder and "
-                         f"sell the {int(filled_qty)} filled unit(s)")}
+                "note": f"no fills for {idle_hours:g}h — entry window expired"}
     if (
         side == "buy"
         and strategy != "patient-probe"
@@ -906,32 +945,30 @@ def _add_personal_candidates(rows: list[dict], stats: dict[int, dict],
 
 
 def plan(cash: int, offers: list[dict] | None = None,
+         recovered_buys: list[dict] | None = None,
          overlay: dict | None = None, seed_limit: int = 80, candidate_limit: int | None = None,
          active_seed_limit: int | None = None, active_candidate_limit: int = 20,
          time_seed_limit: int = 80, time_candidate_limit: int = 10,
-         horizon: str = "intraday", lanes: str | list[str] | set[str] | tuple[str, ...] | None = None,
+         horizon: str = "intraday",
          max_new_slots: int | None = None, away_hours: float | None = None,
          strategies: str | list[str] | set[str] | tuple[str, ...] | None = None) -> dict:
     if horizon not in PLAN_HORIZONS:
         raise ValueError(f"unknown plan horizon {horizon!r}; expected one of {sorted(PLAN_HORIZONS)}")
     if cash is None:
-        raise ValueError("cash is required; pass the liquid gp you want the planner to size against")
+        raise ValueError("cash is required; pass spendable gp currently outside GE offers")
     if cash < 0:
         raise ValueError("cash must be non-negative")
     if max_new_slots is not None and not 0 <= max_new_slots <= MAX_SLOTS:
         raise ValueError(f"max_new_slots must be between 0 and {MAX_SLOTS}")
     if away_hours is not None and away_hours < 0:
         raise ValueError("away_hours must be non-negative")
-    if lanes is not None and strategies is not None:
-        raise ValueError("pass either strategies or lanes, not both")
-    strategy_input = strategies if strategies is not None else lanes
     # Attendance is one concept: overnight is just "away long enough". Either input implies the
     # other so no strategy can see a horizon that contradicts the stated absence.
     if horizon == "overnight":
         away_hours = max(away_hours or 0, OVERNIGHT_FILL_WINDOW_HOURS)
     if away_hours is not None and away_hours >= OVERNIGHT_AWAY_HOURS:
         horizon = "overnight"
-    enabled_strategies = _normalize_strategies(strategy_input)
+    enabled_strategies = _normalize_strategies(strategies)
     # A strategy is unattendable when its first required management action lands inside the absence.
     active_unattended = away_hours is not None and away_hours * 60 >= ACTIVE_CANCEL_MINUTES
     if active_unattended and enabled_strategies and enabled_strategies <= {"active"}:
@@ -941,35 +978,47 @@ def plan(cash: int, offers: list[dict] | None = None,
             "reduce the absence or allow other strategies"
         )
     offers = offers or []
+    recovered_buys = recovered_buys or []
     overlay = overlay or {}
     boost = {b["id"] for b in overlay.get("boost", [])}
     avoid = {a["id"] for a in overlay.get("avoid", [])}
 
-    # One authorization governs spending, percentage caps, and deployment reporting.
-    # Triage may reveal more cash, but only a later run with a larger --cash may use it.
-    run_budget = cash
     fill_window_hours = (
         OVERNIGHT_FILL_WINDOW_HOURS if horizon == "overnight" else signals.FILL_WINDOW_HOURS
     )
     cost_map = _cost_basis()
-    strategy_by_item = _open_strategy_by_item(offers)
     personal_stats = _personal_execution_stats(fill_window_hours)
     # Minimum worthwhile profit for a slot. Backtested realized profit, not paper margin.
     profit_floor = MIN_SLOT_PROFIT_GP
 
-    offer_triage = [_triage_offer(o, cost_map, strategy_by_item) for o in offers]
-    projection = _project_after_triage(offers, offer_triage, run_budget)
+    offer_triage = [_triage_offer(o, cost_map) for o in offers]
+    projection = _project_after_triage(offers, offer_triage, cash)
+    run_budget = projection["budget_left"]
+    recovered_sells = []
+    for recovered in recovered_buys[:projection["free_slots"]]:
+        sell = _sell_fill_row(
+            recovered,
+            None,
+            f"sell {recovered['filled_qty']} tracked unit(s) bought and collected between syncs",
+        )
+        assert sell is not None
+        recovered_sells.append(sell)
+    recovered_waiting = recovered_buys[len(recovered_sells):]
+    projection["free_slots"] -= len(recovered_sells)
     out: dict = {
         "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-        "inputs": {"liquid_gp": run_budget,
+        "inputs": {"spendable_gp": cash,
+                   "deployable_gp": run_budget,
                    "open_offers": len(offers),
+                   "recovered_buys": len(recovered_buys),
                    "profit_floor_gp": profit_floor,
                    "horizon": horizon,
                    "away_hours": away_hours,
                    "strategies": sorted(enabled_strategies),
                    "max_new_slots": max_new_slots},
         "offer_triage": offer_triage,
-        "sell_fills": projection["sell_fills"],
+        "sell_fills": projection["sell_fills"] + recovered_sells,
+        "recovered_waiting": recovered_waiting,
         "projection": {k: v for k, v in projection.items() if k != "sell_fills"},
         "buys": [], "patient_probes": [], "active_buys": [], "time_buys": [],
         "staples": [
@@ -985,7 +1034,7 @@ def plan(cash: int, offers: list[dict] | None = None,
     on_offer = {
         o["id"] for o, row in zip(offers, offer_triage)
         if row.get("verdict") in {"hold", "reprice"}
-    }
+    } | {row["id"] for row in recovered_buys}
     physical_free_slots = projection["free_slots"]
     free_slots = physical_free_slots
     if max_new_slots is not None:
@@ -1075,7 +1124,7 @@ def plan(cash: int, offers: list[dict] | None = None,
             continue
         replay = sig.get("replay_evidence")
         # The replayed order reduced to what ranking and the reason string need. median_hold_hours
-        # is the lane's fixed horizon rather than a measured value; it is here because the ranking
+        # is the strategy's fixed horizon rather than a measured value; it is here because the ranking
         # key divides by it to compare patient, time-of-day and active candidates on gp per hour.
         band_evidence = (
             {
@@ -1133,9 +1182,9 @@ def plan(cash: int, offers: list[dict] | None = None,
             sig["id"] not in boost,
             # Demote patient candidates seeded below the normal volume floor: the patient scan
             # widens its seed to min_volume=1, so thin items reach ranking that otherwise would
-            # not. The other two lanes pass False deliberately — time-of-day already seeds at
-            # SEED_MIN_VOLUME, and the active lane trades high-value items that are thin by
-            # nature, so demoting them by volume would demote the whole lane.
+            # not. The other two strategies pass False deliberately — time-of-day already seeds at
+            # SEED_MIN_VOLUME, and the active strategy trades high-value items that are thin by
+            # nature, so demoting them by volume would demote the whole strategy.
             sig["vol_1h"] < signals.SEED_MIN_VOLUME,
             -(band_evidence["avg_profit_per_unit"] * min(
                 sig["fillable_qty"],
@@ -1174,7 +1223,7 @@ def plan(cash: int, offers: list[dict] | None = None,
     # Validated patient, time-of-day, and active strategies compete for the free slots by expected
     # realized gp/hour.
     selected_ids = set()
-    active_downside_budget = int(run_budget * ACTIVE_MAX_LANE_DOWNSIDE_PCT)
+    active_downside_budget = int(run_budget * ACTIVE_MAX_STRATEGY_DOWNSIDE_PCT)
     for _, _, _, strategy_type, sig, band_evidence in allocations:
         if free_slots <= 0:
             break
@@ -1188,7 +1237,7 @@ def plan(cash: int, offers: list[dict] | None = None,
         )
         buy = sig["entry_price"] or 0
         evidence = None
-        # Every lane sizes to the conservative expected-fill estimate, capped by budget and GE
+        # Every strategy sizes to the conservative expected-fill estimate, capped by budget and GE
         # limit, so the floors and ranking never credit units that likely won't fill.
         if strategy_type == "patient":
             personal_fillable, evidence = execution_stats.adjusted_fillable_qty(
@@ -1239,20 +1288,20 @@ def plan(cash: int, offers: list[dict] | None = None,
                 )
             expected_fill = min(qty, sig["fillable_qty"] or 0)
             per_unit = sig["expected_profit_per_unit"]
-            hold_hours = 24  # entry window + hold; the lane hard-exits by 24h
+            hold_hours = 24  # entry window + hold; the strategy hard-exits by 24h
         expected_profit = int(per_unit * expected_fill)
         if qty <= 0:
             spent_lane_risk = strategy_type == "active" and downside_qty <= 0
             skip_target.append({
                 "id": sig["id"], "name": sig["name"],
                 "reason": (
-                    f"active lane forced-exit risk budget spent "
+                    f"active strategy forced-exit risk budget spent "
                     f"({active_downside_budget:,}gp remaining of "
-                    f"{int(run_budget * ACTIVE_MAX_LANE_DOWNSIDE_PCT):,}gp)"
+                    f"{int(run_budget * ACTIVE_MAX_STRATEGY_DOWNSIDE_PCT):,}gp)"
                     if spent_lane_risk else "no budget/liquidity for a slot"
                 ),
                 "constraint": (
-                    "active lane forced-exit risk budget"
+                    "active strategy forced-exit risk budget"
                     if spent_lane_risk else "budget or expected fillability"
                 ),
             })
@@ -1338,8 +1387,7 @@ def plan(cash: int, offers: list[dict] | None = None,
                 f"{band_evidence['trades']} blocks), but fill reachability is unvalidated; "
                 f"cancel zero-fill after {STALE_BUY_HOURS}h"
             ),
-            "predicted": {"direction": "up", "target": sig["exit_price"], "by": _by_hours()},
-            "confidence": 0.45,
+            "deadline": _by_hours(),
             "expected_profit": expected_profit,
             **({"execution_stats": evidence} if evidence else {}),
         })
@@ -1364,9 +1412,7 @@ def plan(cash: int, offers: list[dict] | None = None,
     out["budget_left_gp"] = budget_left
     planned_buys = out["buys"] + out["patient_probes"] + out["active_buys"] + out["time_buys"]
     planned_buy_gp = sum(b["qty"] * b["price"] for b in planned_buys)
-    # --cash is both the spend cap and the deployment denominator. Money released by
-    # this plan's triage instructions was not part of the user's stated liquid amount,
-    # so report it separately and require explicit authorization before redeploying it.
+    # The effective budget includes cash released by the plan's own collect/cancel actions.
     utilization = planned_buy_gp / run_budget if run_budget else 0
     unspent = max(0, run_budget - planned_buy_gp)
     out["deployment"] = {
@@ -1397,7 +1443,7 @@ def _render_md(p: dict, *, report_personal_history: bool = False) -> str:
         + len(p['sell_fills'])
     )
     L = [f"# Plan — {p['generated_at']}",
-         f"liquid {p['inputs']['liquid_gp']:,}gp (manual) · "
+         f"deployable {p['inputs']['deployable_gp']:,}gp · "
          f"slots {new_offers}+{p['slots']['retained_open_offers']} "
          f"used / {p['slots']['max']}"]
     deployment = p.get("deployment")
@@ -1420,8 +1466,14 @@ def _render_md(p: dict, *, report_personal_history: bool = False) -> str:
                 sources.append(f"{released_sell:,}gp sale proceeds collected")
             L.append(
                 "released this run: " + " · ".join(sources)
-                + " — not redeployed; rerun with higher --cash to use it"
+                + " — included in deployable GP"
             )
+    waiting = p.get("recovered_waiting", [])
+    if waiting:
+        quantities = ", ".join(
+            f"item {row['id']} × {row['filled_qty']}" for row in waiting
+        )
+        L.append(f"tracked bought inventory waiting for a free sell slot: {quantities}")
     rows = _action_rows(p)
     if rows:
         L += [
@@ -1453,7 +1505,8 @@ def _render_md(p: dict, *, report_personal_history: bool = False) -> str:
 
 def _main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(prog="flipper.plan")
-    ap.add_argument("--cash", type=int, required=True, help="liquid gp to size against")
+    ap.add_argument("--cash", type=int, required=True,
+                    help="spendable gp currently outside GE offers")
     ap.add_argument(
         "--offers",
         default=None,
@@ -1485,11 +1538,10 @@ def _main(argv: list[str]) -> int:
         help=("comma-separated strategies to allow: balanced/all, conservative, patient, probe, "
               "time, active, or triage/none"),
     )
-    ap.add_argument("--lanes", dest="lanes", default=None, help=argparse.SUPPRESS)
     ap.add_argument("--max-new-slots", type=int, default=None,
                     help="maximum number of new buy offers to recommend after checking open offers")
     ap.add_argument("--write-intents", action="store_true",
-                    help="write pending FU intent tags for new recommendations")
+                    help="record pending order intents for reconciliation on the next sync")
     ap.add_argument(
         "--report-personal-history",
         action="store_true",
@@ -1501,14 +1553,16 @@ def _main(argv: list[str]) -> int:
     if args.offers is None:
         try:
             offers = runelite.read_open_offers()
+            recovered_buys = runelite.read_recovered_buys()
         except RuntimeError as e:
             print(f"error: {e}", file=sys.stderr)
             return 1
     else:
         offers = json.loads(args.offers)
+        recovered_buys = []
     overlay = json.loads(open(args.overlay).read()) if args.overlay else {}
     try:
-        p = plan(cash=args.cash, offers=offers, overlay=overlay,
+        p = plan(cash=args.cash, offers=offers, recovered_buys=recovered_buys, overlay=overlay,
                  seed_limit=args.seed_limit, candidate_limit=(args.limit or None),
                  active_seed_limit=args.active_seed_limit,
                  active_candidate_limit=args.active_limit,
@@ -1516,7 +1570,6 @@ def _main(argv: list[str]) -> int:
                  time_candidate_limit=args.time_limit,
                  horizon=args.horizon,
                  strategies=args.strategies,
-                 lanes=args.lanes,
                  max_new_slots=args.max_new_slots,
                  away_hours=args.away_hours)
     except ValueError as e:
