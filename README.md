@@ -1,5 +1,7 @@
 # Evidence-Based OSRS Flipper
 
+[![Tests](https://github.com/sasoder/evidence-based-osrs-flipper/actions/workflows/tests.yml/badge.svg)](https://github.com/sasoder/evidence-based-osrs-flipper/actions/workflows/tests.yml)
+
 **Evidence-Based OSRS Flipper is an OSRS Grand Exchange flipping advisor.** It reads RuneLite's
 local GE state, checks OSRS Wiki prices, and gives you exact buy/sell/cancel/reprice
 instructions to type into the GE. It never touches the game, you still place every offer
@@ -7,7 +9,7 @@ yourself.
 
 
 <p align="center">
-  <img src="images/demo.png" alt="Asking the agent for a flip plan and getting back an action table" width="700">
+  <img src="images/demo.webp" alt="Asking the agent for a flip plan and getting back an action table" width="700">
 </p>
 
 Each recommendation records why it was made, its target, and its deadline. Later runs reconcile
